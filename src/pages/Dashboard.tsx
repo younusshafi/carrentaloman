@@ -22,16 +22,6 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
-// Placeholder revenue data - will be computed from real data later
-const revenueData = [
-  { month: 'Jul', revenue: 8500, expenses: 2800 },
-  { month: 'Aug', revenue: 9200, expenses: 3100 },
-  { month: 'Sep', revenue: 10800, expenses: 2900 },
-  { month: 'Oct', revenue: 11200, expenses: 3400 },
-  { month: 'Nov', revenue: 12100, expenses: 3000 },
-  { month: 'Dec', revenue: 12450, expenses: 3250 },
-];
-
 export default function Dashboard() {
   const navigate = useNavigate();
   const {
@@ -42,6 +32,7 @@ export default function Dashboard() {
     unpaidFines,
     expiringInsurance,
     expiringRego,
+    revenueChartData,
     isLoading,
     isError,
   } = useDashboardData();
@@ -203,7 +194,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={revenueData}>
+                <BarChart data={revenueChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="month" className="text-xs" />
                   <YAxis className="text-xs" />
@@ -213,6 +204,7 @@ export default function Dashboard() {
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '8px',
                     }}
+                    formatter={(value: number) => [`$${value.toLocaleString()}`, '']}
                   />
                   <Bar dataKey="revenue" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} name="Revenue" />
                   <Bar dataKey="expenses" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} name="Expenses" />
