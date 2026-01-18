@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Gem,
   X,
+  HardDrive,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -31,7 +32,8 @@ const navItems = [
   { icon: AlertTriangle, label: 'Fines', path: '/fines' },
   { icon: Users, label: 'Customers', path: '/customers' },
   { icon: MessageSquare, label: 'WhatsApp', path: '/whatsapp' },
-  { icon: FileUp, label: 'Data Import', path: '/import' },
+  { icon: HardDrive, label: 'Bulk Import', path: '/bulk-import' },
+  { icon: FileUp, label: 'Table Import', path: '/import' },
 ];
 
 const bottomNavItems = [
