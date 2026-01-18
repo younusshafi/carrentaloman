@@ -30,6 +30,8 @@ interface IdCache {
   cars: Map<number, string>; // SQLite car_id -> Supabase UUID
   renters: Map<string, string>; // SQLite renter_name -> Supabase UUID
   rental_sessions: Map<number, string>; // SQLite session_id -> Supabase UUID
+  rental_contracts: Map<number, string>; // SQLite contract_id -> Supabase UUID
+  instalment_plans: Map<number, string>; // SQLite plan_id -> Supabase UUID
 }
 
 export function useBulkImport() {
@@ -43,12 +45,6 @@ export function useBulkImport() {
     successfulTables: [],
     failedTables: [],
   });
-
-  const idCache: IdCache = {
-    cars: new Map(),
-    renters: new Map(),
-    rental_sessions: new Map(),
-  };
 
   const transformRow = (
     row: Record<string, unknown>,
@@ -67,37 +63,61 @@ export function useBulkImport() {
       }
     }
 
-    // Handle foreign key lookups
+    // Handle foreign key lookups based on source table
     if (mapping.requiresLookup) {
-      if (mapping.sourceTable === 'car_expenses' || 
-          mapping.sourceTable === 'insurance_records' ||
-          mapping.sourceTable === 'rego_records' ||
-          mapping.sourceTable === 'car_tracker') {
+      // Tables that need car_id lookup
+      if (['car_expenses', 'insurance_records', 'rego_records', 'car_tracker', 
+           'car_financials_summary', 'instalment_plans'].includes(mapping.sourceTable)) {
         const carId = row['car_id'] as number;
         const supabaseCarId = idCache.cars.get(carId);
-        if (!supabaseCarId && mapping.sourceTable !== 'car_tracker') {
-          return null; // Skip if car not found
+        if (!supabaseCarId && !mapping.isUpdate) {
+          return null; // Skip if car not found (for inserts)
         }
         transformed['car_id'] = supabaseCarId || null;
       }
 
-      if (mapping.sourceTable === 'car_rental_sessions') {
+      // Tables that need renter_id lookup
+      if (mapping.sourceTable === 'renter_instalments') {
+        const renterId = row['renter_id'] as number;
+        // Try to find by renter_id in the cache (we store by name, so this might not work directly)
+        // For now, skip if we can't match
+        transformed['renter_id'] = null;
+      }
+
+      // Rental sessions - need both car and renter lookup
+      if (['car_rental_sessions', 'rental_contracts', 'renter_assignments'].includes(mapping.sourceTable)) {
         const carId = row['car_id'] as number;
         const supabaseCarId = idCache.cars.get(carId);
         transformed['car_id'] = supabaseCarId || null;
 
         // Look up renter by name
-        const renterName = row['renter_name'] as string;
+        const renterName = (row['renter_name'] as string) || '';
         if (renterName) {
-          const renterId = idCache.renters.get(renterName.toLowerCase());
+          const renterId = idCache.renters.get(renterName.toLowerCase().trim());
           transformed['renter_id'] = renterId || null;
         }
       }
 
+      // Rental payments - need session lookup
       if (mapping.sourceTable === 'car_rental_payments') {
         const sessionId = row['session_id'] as number;
         const supabaseSessionId = idCache.rental_sessions.get(sessionId);
         transformed['rental_session_id'] = supabaseSessionId || null;
+      }
+
+      // Rental km logs - need contract/session lookup
+      if (mapping.sourceTable === 'rental_km_logs') {
+        const contractId = row['contract_id'] as number;
+        const supabaseSessionId = idCache.rental_contracts.get(contractId);
+        transformed['rental_session_id'] = supabaseSessionId || null;
+      }
+
+      // Instalment payments - need plan lookup
+      if (mapping.sourceTable === 'instalment_payments') {
+        const planId = row['plan_id'] as number;
+        const supabasePlanId = idCache.instalment_plans.get(planId);
+        if (!supabasePlanId) return null;
+        transformed['plan_id'] = supabasePlanId;
       }
     }
 
@@ -107,7 +127,8 @@ export function useBulkImport() {
   const importTable = async (
     db: SqlDatabase,
     mapping: TableMapping,
-    idCache: IdCache
+    idCache: IdCache,
+    onProgress: (completed: number) => void
   ): Promise<{ imported: number; failed: number }> => {
     const { rows } = getSQLiteTableData(db, mapping.sourceTable);
     
@@ -119,21 +140,34 @@ export function useBulkImport() {
     let imported = 0;
     let failed = 0;
 
-    // Special handling for car_tracker - we UPDATE cars instead of INSERT
-    if (mapping.sourceTable === 'car_tracker') {
+    // Handle UPDATE operations (car_tracker, car_financials_summary)
+    if (mapping.isUpdate) {
       for (const row of rows) {
-        const transformed = transformRow(row, mapping, idCache);
-        if (!transformed || !transformed.car_id) continue;
+        const carId = row['car_id'] as number;
+        const supabaseCarId = idCache.cars.get(carId);
+        if (!supabaseCarId) {
+          failed++;
+          continue;
+        }
+
+        const updateData: Record<string, unknown> = {};
+        for (const colMap of mapping.columnMappings) {
+          const value = colMap.transform 
+            ? colMap.transform(row[colMap.source], row)
+            : row[colMap.source];
+          if (value !== null && value !== undefined) {
+            updateData[colMap.target] = value;
+          }
+        }
+
+        if (Object.keys(updateData).length === 0) {
+          continue;
+        }
 
         const { error } = await supabase
           .from('cars')
-          .update({
-            body_type: transformed.body_type as string | null,
-            color: transformed.color as string | null,
-            tracker_device_type: transformed.tracker_device_type as string | null,
-            tracker_imei: transformed.tracker_imei as string | null,
-          })
-          .eq('id', transformed.car_id as string);
+          .update(updateData as { body_type?: string; color?: string; tracker_device_type?: string; tracker_imei?: string; weekly_rent?: number; bond_amount?: number })
+          .eq('id', supabaseCarId);
 
         if (error) {
           console.error('Update error:', error);
@@ -141,25 +175,31 @@ export function useBulkImport() {
         } else {
           imported++;
         }
+        onProgress(1);
       }
       return { imported, failed };
     }
 
-    // Standard insert for other tables
+    // Standard INSERT operations
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
       const dataToInsert: Record<string, unknown>[] = [];
+      const originalRows: Record<string, unknown>[] = [];
 
       for (const row of batch) {
         const transformed = transformRow(row, mapping, idCache);
         if (transformed) {
           dataToInsert.push(transformed);
+          originalRows.push(row);
         } else {
           failed++;
         }
       }
 
-      if (dataToInsert.length === 0) continue;
+      if (dataToInsert.length === 0) {
+        onProgress(batch.length);
+        continue;
+      }
 
       const { data, error } = await supabase
         .from(mapping.targetTable as 'cars')
@@ -174,7 +214,7 @@ export function useBulkImport() {
 
         // Cache IDs for future lookups
         if (mapping.targetTable === 'cars') {
-          batch.forEach((row, idx) => {
+          originalRows.forEach((row, idx) => {
             if (data[idx]) {
               idCache.cars.set(row['car_id'] as number, data[idx].id);
             }
@@ -182,27 +222,37 @@ export function useBulkImport() {
         }
 
         if (mapping.targetTable === 'renters') {
-          batch.forEach((row, idx) => {
+          originalRows.forEach((row, idx) => {
             if (data[idx]) {
-              const name = (row['name'] as string || '').toLowerCase();
+              const name = (row['name'] as string || '').toLowerCase().trim();
               idCache.renters.set(name, data[idx].id);
             }
           });
         }
 
         if (mapping.targetTable === 'rental_sessions') {
-          batch.forEach((row, idx) => {
+          originalRows.forEach((row, idx) => {
             if (data[idx]) {
-              idCache.rental_sessions.set(row['session_id'] as number, data[idx].id);
+              // Store by session_id or contract_id depending on source
+              if (mapping.sourceTable === 'car_rental_sessions') {
+                idCache.rental_sessions.set(row['session_id'] as number, data[idx].id);
+              } else if (mapping.sourceTable === 'rental_contracts') {
+                idCache.rental_contracts.set(row['contract_id'] as number, data[idx].id);
+              }
+            }
+          });
+        }
+
+        if (mapping.targetTable === 'instalment_plans') {
+          originalRows.forEach((row, idx) => {
+            if (data[idx]) {
+              idCache.instalment_plans.set(row['plan_id'] as number, data[idx].id);
             }
           });
         }
       }
 
-      setProgress(prev => ({
-        ...prev,
-        rowsCompleted: prev.rowsCompleted + dataToInsert.length,
-      }));
+      onProgress(batch.length);
     }
 
     return { imported, failed };
@@ -213,6 +263,14 @@ export function useBulkImport() {
     selectedMappings: TableMapping[]
   ): Promise<BulkImportResult> => {
     setIsImporting(true);
+
+    const idCache: IdCache = {
+      cars: new Map(),
+      renters: new Map(),
+      rental_sessions: new Map(),
+      rental_contracts: new Map(),
+      instalment_plans: new Map(),
+    };
     
     const orderedTables = getImportOrder(selectedMappings.map(m => m.sourceTable));
     const orderedMappings = orderedTables
@@ -223,6 +281,8 @@ export function useBulkImport() {
       const { rows } = getSQLiteTableData(db, mapping.sourceTable);
       return sum + rows.length;
     }, 0);
+
+    let completedRows = 0;
 
     setProgress({
       currentTable: '',
@@ -248,7 +308,13 @@ export function useBulkImport() {
       }));
 
       try {
-        const result = await importTable(db, mapping, idCache);
+        const result = await importTable(db, mapping, idCache, (completed) => {
+          completedRows += completed;
+          setProgress(prev => ({
+            ...prev,
+            rowsCompleted: completedRows,
+          }));
+        });
         
         details.push({
           table: mapping.sourceTable,

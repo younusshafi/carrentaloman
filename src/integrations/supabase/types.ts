@@ -124,6 +124,79 @@ export type Database = {
         }
         Relationships: []
       }
+      instalment_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          payment_date: string
+          plan_id: string | null
+          status: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          payment_date: string
+          plan_id?: string | null
+          status?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          payment_date?: string
+          plan_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instalment_payments_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "instalment_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instalment_plans: {
+        Row: {
+          car_id: string | null
+          created_at: string
+          customer_name: string
+          id: string
+          notes: string | null
+          total_amount: number
+          updated_at: string
+        }
+        Insert: {
+          car_id?: string | null
+          created_at?: string
+          customer_name: string
+          id?: string
+          notes?: string | null
+          total_amount: number
+          updated_at?: string
+        }
+        Update: {
+          car_id?: string | null
+          created_at?: string
+          customer_name?: string
+          id?: string
+          notes?: string | null
+          total_amount?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instalment_plans_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insurance_records: {
         Row: {
           car_id: string | null
@@ -292,6 +365,44 @@ export type Database = {
           },
         ]
       }
+      rental_km_logs: {
+        Row: {
+          amount: number | null
+          created_at: string
+          id: string
+          log_date: string
+          notes: string | null
+          odometer: number
+          rental_session_id: string | null
+        }
+        Insert: {
+          amount?: number | null
+          created_at?: string
+          id?: string
+          log_date: string
+          notes?: string | null
+          odometer: number
+          rental_session_id?: string | null
+        }
+        Update: {
+          amount?: number | null
+          created_at?: string
+          id?: string
+          log_date?: string
+          notes?: string | null
+          odometer?: number
+          rental_session_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rental_km_logs_rental_session_id_fkey"
+            columns: ["rental_session_id"]
+            isOneToOne: false
+            referencedRelation: "rental_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rental_payments: {
         Row: {
           amount: number
@@ -392,6 +503,44 @@ export type Database = {
           },
           {
             foreignKeyName: "rental_sessions_renter_id_fkey"
+            columns: ["renter_id"]
+            isOneToOne: false
+            referencedRelation: "renters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      renter_instalments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          instalment_date: string
+          notes: string | null
+          renter_id: string | null
+          status: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          instalment_date: string
+          notes?: string | null
+          renter_id?: string | null
+          status?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          instalment_date?: string
+          notes?: string | null
+          renter_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "renter_instalments_renter_id_fkey"
             columns: ["renter_id"]
             isOneToOne: false
             referencedRelation: "renters"

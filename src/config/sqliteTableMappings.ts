@@ -16,10 +16,13 @@ export interface TableMapping {
   dependsOn?: string[];
   // If true, this table needs special handling for foreign key lookups
   requiresLookup?: boolean;
+  // If true, this is an UPDATE operation rather than INSERT
+  isUpdate?: boolean;
 }
 
 // Define mappings from SQLite tables to Supabase tables
 export const sqliteTableMappings: TableMapping[] = [
+  // === CORE TABLES (no dependencies) ===
   {
     sourceTable: 'cars',
     targetTable: 'cars',
@@ -33,19 +36,6 @@ export const sqliteTableMappings: TableMapping[] = [
       { source: 'selling_price', target: 'selling_price' },
       { source: 'purchase_price', target: 'purchase_price' },
       { source: 'purchase_date', target: 'purchase_date' },
-    ],
-  },
-  {
-    sourceTable: 'car_tracker',
-    targetTable: 'cars',
-    description: 'Vehicle tracker information (merged into cars)',
-    dependsOn: ['cars'],
-    requiresLookup: true,
-    columnMappings: [
-      { source: 'body_type', target: 'body_type' },
-      { source: 'colour', target: 'color' },
-      { source: 'tracker_type', target: 'tracker_device_type' },
-      { source: 'tracker_id', target: 'tracker_imei' },
     ],
   },
   {
@@ -78,6 +68,34 @@ export const sqliteTableMappings: TableMapping[] = [
       },
     ],
   },
+
+  // === TABLES DEPENDING ON CARS ===
+  {
+    sourceTable: 'car_tracker',
+    targetTable: 'cars',
+    description: 'Vehicle tracker info (updates cars)',
+    dependsOn: ['cars'],
+    requiresLookup: true,
+    isUpdate: true,
+    columnMappings: [
+      { source: 'body_type', target: 'body_type' },
+      { source: 'colour', target: 'color' },
+      { source: 'tracker_type', target: 'tracker_device_type' },
+      { source: 'tracker_id', target: 'tracker_imei' },
+    ],
+  },
+  {
+    sourceTable: 'car_financials_summary',
+    targetTable: 'cars',
+    description: 'Financial summary (updates cars)',
+    dependsOn: ['cars'],
+    requiresLookup: true,
+    isUpdate: true,
+    columnMappings: [
+      { source: 'weekly_rent', target: 'weekly_rent' },
+      { source: 'fixed_price', target: 'bond_amount' },
+    ],
+  },
   {
     sourceTable: 'car_expenses',
     targetTable: 'car_expenses',
@@ -89,32 +107,6 @@ export const sqliteTableMappings: TableMapping[] = [
       { source: 'category', target: 'expense_type' },
       { source: 'description', target: 'description' },
       { source: 'amount', target: 'amount' },
-    ],
-  },
-  {
-    sourceTable: 'car_rental_sessions',
-    targetTable: 'rental_sessions',
-    description: 'Rental session records',
-    dependsOn: ['cars', 'renters'],
-    requiresLookup: true,
-    columnMappings: [
-      { source: 'pickup_date', target: 'start_date' },
-      { source: 'return_date', target: 'end_date' },
-      { source: 'bond', target: 'bond_amount' },
-      { source: 'weekly_rent', target: 'weekly_rent' },
-      { source: 'notes', target: 'notes' },
-    ],
-  },
-  {
-    sourceTable: 'car_rental_payments',
-    targetTable: 'rental_payments',
-    description: 'Rental payment records',
-    dependsOn: ['rental_sessions'],
-    requiresLookup: true,
-    columnMappings: [
-      { source: 'date', target: 'payment_date' },
-      { source: 'amount', target: 'amount' },
-      { source: 'comment', target: 'notes' },
     ],
   },
   {
@@ -131,7 +123,6 @@ export const sqliteTableMappings: TableMapping[] = [
         source: 'insurance_due', 
         target: 'start_date',
         transform: (value) => {
-          // Set start date to 1 year before expiry as placeholder
           if (!value) return null;
           const expiry = new Date(String(value));
           expiry.setFullYear(expiry.getFullYear() - 1);
@@ -151,8 +142,121 @@ export const sqliteTableMappings: TableMapping[] = [
       { 
         source: 'car_id', 
         target: 'rego_number',
-        transform: () => 'PENDING' // Placeholder as SQLite doesn't have rego_number
+        transform: () => 'PENDING'
       },
+    ],
+  },
+  {
+    sourceTable: 'instalment_plans',
+    targetTable: 'instalment_plans',
+    description: 'Car purchase instalment plans',
+    dependsOn: ['cars'],
+    requiresLookup: true,
+    columnMappings: [
+      { source: 'customer_name', target: 'customer_name' },
+      { source: 'total_amount', target: 'total_amount' },
+      { source: 'notes', target: 'notes' },
+    ],
+  },
+
+  // === TABLES DEPENDING ON RENTERS ===
+  {
+    sourceTable: 'renter_instalments',
+    targetTable: 'renter_instalments',
+    description: 'Renter payment tracking',
+    dependsOn: ['renters'],
+    requiresLookup: true,
+    columnMappings: [
+      { source: 'instalment_date', target: 'instalment_date' },
+      { source: 'amount', target: 'amount' },
+      { source: 'status', target: 'status' },
+      { source: 'notes', target: 'notes' },
+    ],
+  },
+
+  // === TABLES DEPENDING ON CARS AND RENTERS ===
+  {
+    sourceTable: 'car_rental_sessions',
+    targetTable: 'rental_sessions',
+    description: 'Rental session records',
+    dependsOn: ['cars', 'renters'],
+    requiresLookup: true,
+    columnMappings: [
+      { source: 'pickup_date', target: 'start_date' },
+      { source: 'return_date', target: 'end_date' },
+      { source: 'bond', target: 'bond_amount' },
+      { source: 'weekly_rent', target: 'weekly_rent' },
+      { source: 'notes', target: 'notes' },
+    ],
+  },
+  {
+    sourceTable: 'rental_contracts',
+    targetTable: 'rental_sessions',
+    description: 'Rental contracts (as sessions)',
+    dependsOn: ['cars', 'renters'],
+    requiresLookup: true,
+    columnMappings: [
+      { source: 'start_date', target: 'start_date' },
+      { source: 'end_date', target: 'end_date' },
+      { source: 'bond_amount', target: 'bond_amount' },
+      { source: 'rent_amount', target: 'weekly_rent' },
+      { source: 'notes', target: 'notes' },
+    ],
+  },
+  {
+    sourceTable: 'renter_assignments',
+    targetTable: 'rental_sessions',
+    description: 'Renter assignments (as sessions)',
+    dependsOn: ['cars', 'renters'],
+    requiresLookup: true,
+    columnMappings: [
+      { source: 'assignment_date', target: 'start_date' },
+      { source: 'notes', target: 'notes' },
+      { 
+        source: 'assignment_date', 
+        target: 'weekly_rent',
+        transform: () => 0 // Placeholder
+      },
+    ],
+  },
+
+  // === TABLES DEPENDING ON RENTAL SESSIONS ===
+  {
+    sourceTable: 'car_rental_payments',
+    targetTable: 'rental_payments',
+    description: 'Rental payment records',
+    dependsOn: ['car_rental_sessions'],
+    requiresLookup: true,
+    columnMappings: [
+      { source: 'date', target: 'payment_date' },
+      { source: 'amount', target: 'amount' },
+      { source: 'comment', target: 'notes' },
+    ],
+  },
+  {
+    sourceTable: 'rental_km_logs',
+    targetTable: 'rental_km_logs',
+    description: 'Odometer/km tracking logs',
+    dependsOn: ['rental_contracts'],
+    requiresLookup: true,
+    columnMappings: [
+      { source: 'log_date', target: 'log_date' },
+      { source: 'odometer', target: 'odometer' },
+      { source: 'amount', target: 'amount' },
+    ],
+  },
+
+  // === TABLES DEPENDING ON INSTALMENT PLANS ===
+  {
+    sourceTable: 'instalment_payments',
+    targetTable: 'instalment_payments',
+    description: 'Instalment payment records',
+    dependsOn: ['instalment_plans'],
+    requiresLookup: true,
+    columnMappings: [
+      { source: 'payment_date', target: 'payment_date' },
+      { source: 'amount', target: 'amount' },
+      { source: 'status', target: 'status' },
     ],
   },
 ];
