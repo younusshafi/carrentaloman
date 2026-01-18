@@ -229,7 +229,14 @@ export const sqliteTableMappings: TableMapping[] = [
     requiresLookup: true,
     columnMappings: [
       { source: 'date', target: 'payment_date' },
-      { source: 'amount', target: 'amount' },
+      { 
+        source: 'amount', 
+        target: 'amount',
+        transform: (value) => {
+          const num = Number(value);
+          return isNaN(num) || value === null ? 0 : num;
+        }
+      },
       { source: 'comment', target: 'notes' },
     ],
   },
