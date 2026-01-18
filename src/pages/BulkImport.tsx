@@ -305,6 +305,45 @@ export default function BulkImport() {
                 The system will automatically detect and map compatible tables
               </p>
             </div>
+            
+            {/* Clear All Data Option */}
+            <div className="mt-6 pt-6 border-t">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium">Clear existing data before import?</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Remove all existing data from the database before uploading a new file
+                  </p>
+                </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm" disabled={isClearing}>
+                      {isClearing ? (
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4 mr-2" />
+                      )}
+                      Clear All Data
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Clear All Data?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete ALL data from the database including cars, renters, 
+                        rental sessions, payments, and all related records. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleClearData}>
+                        Yes, Clear All Data
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -799,7 +838,34 @@ export default function BulkImport() {
                 </TableBody>
               </Table>
 
-              <div className="flex gap-4 justify-center pt-4">
+              <div className="flex flex-wrap gap-4 justify-center pt-4">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" disabled={isClearing}>
+                      {isClearing ? (
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4 mr-2" />
+                      )}
+                      Clear All Data
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Clear All Data?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete ALL data from the database including cars, renters, 
+                        rental sessions, payments, and all related records. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleClearData}>
+                        Yes, Clear All Data
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 <Button variant="outline" onClick={handleReset}>
                   Import Another Database
                 </Button>
