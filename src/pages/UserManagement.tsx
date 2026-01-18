@@ -4,10 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdminUsers } from '@/hooks/useAdminUsers';
 import { useAuth } from '@/contexts/AuthContext';
-import { Shield, ShieldCheck, User, Users } from 'lucide-react';
+import { Shield, ShieldCheck, User, Users, Clock, CheckCircle, XCircle } from 'lucide-react';
 import type { Database } from '@/integrations/supabase/types';
 
 type AppRole = Database['public']['Enums']['app_role'];
@@ -19,9 +21,13 @@ const roleConfig: Record<AppRole, { label: string; icon: React.ElementType; vari
 };
 
 export default function UserManagement() {
-  const { users, isLoading, updateRole, isUpdating } = useAdminUsers();
+  const { users, isLoading, updateRole, isUpdating, approveUser, isApproving } = useAdminUsers();
   const { user: currentUser } = useAuth();
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [approvingUserId, setApprovingUserId] = useState<string | null>(null);
+
+  const pendingUsers = users.filter(u => !u.is_approved);
+  const approvedUsers = users.filter(u => u.is_approved);
 
   const handleRoleChange = (userId: string, newRole: string) => {
     setUpdatingUserId(userId);
@@ -29,6 +35,14 @@ export default function UserManagement() {
     updateRole(
       { userId, role },
       { onSettled: () => setUpdatingUserId(null) }
+    );
+  };
+
+  const handleApproval = (userId: string, approve: boolean) => {
+    setApprovingUserId(userId);
+    approveUser(
+      { userId, approve },
+      { onSettled: () => setApprovingUserId(null) }
     );
   };
 
@@ -46,12 +60,114 @@ export default function UserManagement() {
     );
   };
 
+  const renderUserTable = (userList: typeof users, showApprovalColumn = false) => (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>User</TableHead>
+          <TableHead>Current Role</TableHead>
+          <TableHead>Created</TableHead>
+          {showApprovalColumn ? (
+            <TableHead className="text-right">Actions</TableHead>
+          ) : (
+            <>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Change Role</TableHead>
+            </>
+          )}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {userList.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={showApprovalColumn ? 4 : 5} className="text-center text-muted-foreground py-8">
+              {showApprovalColumn ? 'No pending approvals' : 'No approved users'}
+            </TableCell>
+          </TableRow>
+        ) : (
+          userList.map((user) => {
+            const isCurrentUser = user.id === currentUser?.id;
+            const isProcessing = (isUpdating && updatingUserId === user.id) || (isApproving && approvingUserId === user.id);
+            return (
+              <TableRow key={user.id}>
+                <TableCell>
+                  <div className="flex flex-col">
+                    <span className="font-medium">
+                      {user.display_name || 'Unnamed User'}
+                      {isCurrentUser && (
+                        <Badge variant="outline" className="ml-2 text-xs">You</Badge>
+                      )}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-mono">{user.id.slice(0, 8)}...</span>
+                  </div>
+                </TableCell>
+                <TableCell>{getRoleBadge(user.role)}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {new Date(user.created_at).toLocaleDateString()}
+                </TableCell>
+                {showApprovalColumn ? (
+                  <TableCell className="text-right">
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => handleApproval(user.id, true)}
+                        disabled={isProcessing}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleApproval(user.id, false)}
+                        disabled={isProcessing}
+                      >
+                        <XCircle className="w-4 h-4 mr-1" />
+                        Reject
+                      </Button>
+                    </div>
+                  </TableCell>
+                ) : (
+                  <>
+                    <TableCell>
+                      <Badge variant="outline" className="gap-1 text-green-600 border-green-600">
+                        <CheckCircle className="w-3 h-3" />
+                        Approved
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Select
+                        value={user.role || 'none'}
+                        onValueChange={(value) => handleRoleChange(user.id, value)}
+                        disabled={isProcessing}
+                      >
+                        <SelectTrigger className="w-32 ml-auto">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No Role</SelectItem>
+                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="manager">Manager</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                  </>
+                )}
+              </TableRow>
+            );
+          })
+        )}
+      </TableBody>
+    </Table>
+  );
+
   return (
     <MainLayout title="User Management" subtitle="Manage user access and permissions">
       <div className="space-y-6">
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -59,6 +175,15 @@ export default function UserManagement() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{users.length}</div>
+            </CardContent>
+          </Card>
+          <Card className={pendingUsers.length > 0 ? 'border-warning' : ''}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Pending Approval</CardTitle>
+              <Clock className="h-4 w-4 text-warning" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-warning">{pendingUsers.length}</div>
             </CardContent>
           </Card>
           <Card>
@@ -85,12 +210,12 @@ export default function UserManagement() {
           </Card>
         </div>
 
-        {/* Users Table */}
+        {/* Users Tabs */}
         <Card>
           <CardHeader>
             <CardTitle>Users</CardTitle>
             <CardDescription>
-              Assign roles to control what users can access. Admins have full access, managers can create and edit data, users can only view.
+              New user signups require approval before they can access the system. Assign roles to control access levels.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -103,65 +228,28 @@ export default function UserManagement() {
                 ))}
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Current Role</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Change Role</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        No users found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    users.map((user) => {
-                      const isCurrentUser = user.id === currentUser?.id;
-                      return (
-                        <TableRow key={user.id}>
-                          <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-medium">
-                                {user.display_name || 'Unnamed User'}
-                                {isCurrentUser && (
-                                  <Badge variant="outline" className="ml-2 text-xs">You</Badge>
-                                )}
-                              </span>
-                              <span className="text-sm text-muted-foreground">{user.id}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{getRoleBadge(user.role)}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {new Date(user.created_at).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Select
-                              value={user.role || 'none'}
-                              onValueChange={(value) => handleRoleChange(user.id, value)}
-                              disabled={isUpdating && updatingUserId === user.id}
-                            >
-                              <SelectTrigger className="w-32 ml-auto">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">No Role</SelectItem>
-                                <SelectItem value="user">User</SelectItem>
-                                <SelectItem value="manager">Manager</SelectItem>
-                                <SelectItem value="admin">Admin</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
+              <Tabs defaultValue={pendingUsers.length > 0 ? 'pending' : 'approved'}>
+                <TabsList className="mb-4">
+                  <TabsTrigger value="pending" className="gap-2">
+                    <Clock className="w-4 h-4" />
+                    Pending Approval
+                    {pendingUsers.length > 0 && (
+                      <Badge variant="destructive" className="ml-1">{pendingUsers.length}</Badge>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="approved" className="gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    Approved Users
+                    <Badge variant="outline" className="ml-1">{approvedUsers.length}</Badge>
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="pending">
+                  {renderUserTable(pendingUsers, true)}
+                </TabsContent>
+                <TabsContent value="approved">
+                  {renderUserTable(approvedUsers, false)}
+                </TabsContent>
+              </Tabs>
             )}
           </CardContent>
         </Card>
@@ -180,10 +268,10 @@ export default function UserManagement() {
                 </div>
                 <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
                   <li>Full system access</li>
+                  <li>Approve new users</li>
                   <li>Manage users & roles</li>
                   <li>Delete records</li>
                   <li>Bulk import data</li>
-                  <li>All manager permissions</li>
                 </ul>
               </div>
               <div className="space-y-2">
