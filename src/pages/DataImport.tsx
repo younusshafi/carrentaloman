@@ -31,13 +31,16 @@ import {
   Database,
   RefreshCw,
   Download,
+  HardDrive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { importableTables, getTableConfig, generateTemplate, TableConfig } from '@/config/importConfig';
-import { parseFile, downloadTemplate, ParsedData } from '@/utils/fileParser';
+import { parseFile, downloadTemplate, ParsedData, isSQLiteFile } from '@/utils/fileParser';
 import { useDataImport, ColumnMapping, ValidationResult } from '@/hooks/useDataImport';
+import { parseSQLiteFile, getSQLiteTableData, closeSQLiteDatabase, SQLiteData, SQLiteTable } from '@/utils/sqliteParser';
+import { Database as SqlDatabase } from 'sql.js';
 
-type ImportStep = 'upload' | 'preview' | 'mapping' | 'validation' | 'migrate';
+type ImportStep = 'upload' | 'source-table' | 'preview' | 'mapping' | 'validation' | 'migrate';
 
 export default function DataImport() {
   const [currentStep, setCurrentStep] = useState<ImportStep>('upload');
@@ -48,17 +51,27 @@ export default function DataImport() {
   const [importComplete, setImportComplete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // SQLite specific state
+  const [sqliteData, setSqliteData] = useState<SQLiteData | null>(null);
+  const [selectedSourceTable, setSelectedSourceTable] = useState<string>('');
+  
   const { autoMapColumns, validateData, importData, isImporting, progress } = useDataImport();
 
   const steps = [
     { key: 'upload', label: 'Upload', icon: Upload },
+    { key: 'source-table', label: 'Source', icon: HardDrive, sqliteOnly: true },
     { key: 'preview', label: 'Preview', icon: FileSpreadsheet },
     { key: 'mapping', label: 'Mapping', icon: ArrowRight },
     { key: 'validation', label: 'Validation', icon: CheckCircle },
     { key: 'migrate', label: 'Migrate', icon: Database },
   ];
 
-  const currentStepIndex = steps.findIndex(s => s.key === currentStep);
+  // Filter steps based on file type
+  const visibleSteps = sqliteData 
+    ? steps 
+    : steps.filter(s => !s.sqliteOnly);
+
+  const currentStepIndex = visibleSteps.findIndex(s => s.key === currentStep);
   const tableConfig = selectedTable ? getTableConfig(selectedTable) : undefined;
 
   const validationSummary = {
@@ -78,21 +91,60 @@ export default function DataImport() {
     }
 
     try {
-      const data = await parseFile(file);
-      setParsedData(data);
-      
-      // Auto-map columns
-      const config = getTableConfig(selectedTable);
-      if (config) {
-        const autoMappings = autoMapColumns(data.headers, config);
-        setMappings(autoMappings);
+      // Check if it's a SQLite file
+      if (isSQLiteFile(file)) {
+        toast.loading('Loading SQLite database...', { id: 'sqlite-load' });
+        const data = await parseSQLiteFile(file);
+        setSqliteData(data);
+        toast.dismiss('sqlite-load');
+        toast.success(`Loaded SQLite database with ${data.tables.length} table(s)`);
+        setCurrentStep('source-table');
+      } else {
+        const data = await parseFile(file);
+        setParsedData(data);
+        
+        // Auto-map columns
+        const config = getTableConfig(selectedTable);
+        if (config) {
+          const autoMappings = autoMapColumns(data.headers, config);
+          setMappings(autoMappings);
+        }
+        
+        toast.success(`Loaded ${data.rows.length} rows from ${file.name}`);
+        setCurrentStep('preview');
       }
-      
-      toast.success(`Loaded ${data.rows.length} rows from ${file.name}`);
-      setCurrentStep('preview');
     } catch (error) {
+      toast.dismiss('sqlite-load');
       toast.error(error instanceof Error ? error.message : 'Failed to parse file');
     }
+  };
+
+  const handleSourceTableSelect = (tableName: string) => {
+    if (!sqliteData || !tableName) return;
+    
+    setSelectedSourceTable(tableName);
+    
+    // Get data from selected SQLite table
+    const { headers, rows } = getSQLiteTableData(sqliteData.db, tableName);
+    
+    const data: ParsedData = {
+      headers,
+      rows,
+      fileName: `${sqliteData.fileName} → ${tableName}`,
+      isSQLite: true,
+    };
+    
+    setParsedData(data);
+    
+    // Auto-map columns
+    const config = getTableConfig(selectedTable);
+    if (config) {
+      const autoMappings = autoMapColumns(headers, config);
+      setMappings(autoMappings);
+    }
+    
+    toast.success(`Loaded ${rows.length} rows from table "${tableName}"`);
+    setCurrentStep('preview');
   };
 
   const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
@@ -154,11 +206,18 @@ export default function DataImport() {
   };
 
   const handleReset = () => {
+    // Close SQLite database if open
+    if (sqliteData) {
+      closeSQLiteDatabase(sqliteData.db);
+    }
+    
     setCurrentStep('upload');
     setParsedData(null);
     setMappings([]);
     setValidationResults([]);
     setImportComplete(false);
+    setSqliteData(null);
+    setSelectedSourceTable('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -170,11 +229,15 @@ export default function DataImport() {
     setMappings(newMappings);
   };
 
+  const getSelectedSourceTableInfo = (): SQLiteTable | undefined => {
+    return sqliteData?.tables.find(t => t.name === selectedSourceTable);
+  };
+
   return (
-    <MainLayout title="Data Migration" subtitle="Import data from Excel or CSV files">
+    <MainLayout title="Data Migration" subtitle="Import data from Excel, CSV, or SQLite files">
       {/* Progress Steps */}
       <div className="flex items-center justify-between mb-8 px-4">
-        {steps.map((step, index) => (
+        {visibleSteps.map((step, index) => (
           <div key={step.key} className="flex items-center">
             <div className={`flex items-center gap-2 ${
               index <= currentStepIndex ? 'text-accent' : 'text-muted-foreground'
@@ -194,7 +257,7 @@ export default function DataImport() {
                 index <= currentStepIndex ? '' : 'text-muted-foreground'
               }`}>{step.label}</span>
             </div>
-            {index < steps.length - 1 && (
+            {index < visibleSteps.length - 1 && (
               <div className={`w-12 sm:w-24 h-0.5 mx-2 ${
                 index < currentStepIndex ? 'bg-accent' : 'bg-muted'
               }`} />
@@ -248,13 +311,13 @@ export default function DataImport() {
           <Card>
             <CardHeader>
               <CardTitle>Upload File</CardTitle>
-              <CardDescription>Upload your Excel or CSV file</CardDescription>
+              <CardDescription>Upload your Excel, CSV, or SQLite database file</CardDescription>
             </CardHeader>
             <CardContent>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.xls,.csv,.sqlite,.db,.sqlite3"
                 onChange={handleFileSelect}
                 className="hidden"
               />
@@ -275,24 +338,98 @@ export default function DataImport() {
                 <p className="text-muted-foreground mb-4">
                   {selectedTable ? 'or click to browse' : 'Choose a target table above to enable upload'}
                 </p>
-                <p className="text-sm text-muted-foreground">Supports .xlsx, .xls, .csv files up to 10MB</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <Badge variant="secondary">.xlsx</Badge>
+                  <Badge variant="secondary">.xls</Badge>
+                  <Badge variant="secondary">.csv</Badge>
+                  <Badge variant="secondary">.sqlite</Badge>
+                  <Badge variant="secondary">.db</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-3">Files up to 10MB</p>
               </div>
             </CardContent>
           </Card>
         </div>
       )}
 
+      {/* SQLite Source Table Selection */}
+      {currentStep === 'source-table' && sqliteData && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <HardDrive className="w-5 h-5" />
+                Select Source Table
+              </CardTitle>
+              <CardDescription>
+                Choose a table from {sqliteData.fileName} to import
+              </CardDescription>
+            </div>
+            <Button variant="outline" onClick={handleReset}>
+              Back
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {sqliteData.tables.map((table) => (
+                <Card 
+                  key={table.name}
+                  className={`cursor-pointer transition-all hover:border-accent hover:shadow-md ${
+                    selectedSourceTable === table.name ? 'border-accent bg-accent/5' : ''
+                  }`}
+                  onClick={() => handleSourceTableSelect(table.name)}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Database className="w-5 h-5 text-accent" />
+                        <h4 className="font-semibold">{table.name}</h4>
+                      </div>
+                      <Badge variant="outline">{table.rowCount} rows</Badge>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium">Columns:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {table.columns.slice(0, 5).map((col) => (
+                          <Badge key={col.name} variant="secondary" className="text-xs">
+                            {col.name}
+                          </Badge>
+                        ))}
+                        {table.columns.length > 5 && (
+                          <Badge variant="secondary" className="text-xs">
+                            +{table.columns.length - 5} more
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {currentStep === 'preview' && parsedData && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle>Data Preview</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                {parsedData.isSQLite && <HardDrive className="w-5 h-5" />}
+                Data Preview
+              </CardTitle>
               <CardDescription>
                 Showing first 10 rows from {parsedData.fileName} ({parsedData.rows.length} total rows)
               </CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handleReset}>
+              <Button variant="outline" onClick={() => {
+                if (sqliteData) {
+                  setCurrentStep('source-table');
+                } else {
+                  handleReset();
+                }
+              }}>
                 Back
               </Button>
               <Button variant="accent" onClick={() => setCurrentStep('mapping')}>
