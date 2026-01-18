@@ -140,7 +140,7 @@ export function useDashboardData() {
     },
   });
 
-  // Fetch rental payments for revenue calculation
+  // Fetch rental payments for revenue calculation (current month)
   const paymentsQuery = useQuery({
     queryKey: ['dashboard-payments'],
     queryFn: async () => {
@@ -174,12 +174,89 @@ export function useDashboardData() {
     },
   });
 
+  // Fetch last 6 months of payments for chart
+  const historicalPaymentsQuery = useQuery({
+    queryKey: ['dashboard-historical-payments'],
+    queryFn: async () => {
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      sixMonthsAgo.setDate(1);
+      
+      const { data, error } = await supabase
+        .from('rental_payments')
+        .select('amount, payment_date')
+        .gte('payment_date', sixMonthsAgo.toISOString().split('T')[0]);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Fetch last 6 months of expenses for chart
+  const historicalExpensesQuery = useQuery({
+    queryKey: ['dashboard-historical-expenses'],
+    queryFn: async () => {
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      sixMonthsAgo.setDate(1);
+      
+      const { data, error } = await supabase
+        .from('car_expenses')
+        .select('amount, expense_date')
+        .gte('expense_date', sixMonthsAgo.toISOString().split('T')[0]);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   // Compute stats from live data
   const cars = carsQuery.data || [];
   const activeRentals = rentalsQuery.data || [];
   const allRentals = allRentalsQuery.data || [];
   const payments = paymentsQuery.data || [];
   const expenses = expensesQuery.data || [];
+  const historicalPayments = historicalPaymentsQuery.data || [];
+  const historicalExpenses = historicalExpensesQuery.data || [];
+
+  // Compute monthly revenue/expense chart data
+  const getMonthKey = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  const getMonthLabel = (monthKey: string) => {
+    const [year, month] = monthKey.split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleDateString('en-US', { month: 'short' });
+  };
+
+  // Get last 6 months
+  const months: string[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const date = new Date();
+    date.setMonth(date.getMonth() - i);
+    months.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  // Aggregate payments by month
+  const revenueByMonth = new Map<string, number>();
+  historicalPayments.forEach(p => {
+    const key = getMonthKey(p.payment_date);
+    revenueByMonth.set(key, (revenueByMonth.get(key) || 0) + Number(p.amount || 0));
+  });
+
+  // Aggregate expenses by month
+  const expensesByMonth = new Map<string, number>();
+  historicalExpenses.forEach(e => {
+    const key = getMonthKey(e.expense_date);
+    expensesByMonth.set(key, (expensesByMonth.get(key) || 0) + Number(e.amount || 0));
+  });
+
+  // Build chart data
+  const revenueChartData = months.map(monthKey => ({
+    month: getMonthLabel(monthKey),
+    revenue: Math.round(revenueByMonth.get(monthKey) || 0),
+    expenses: Math.round(expensesByMonth.get(monthKey) || 0),
+  }));
 
   const stats: DashboardStats = {
     fleet: {
@@ -207,7 +284,8 @@ export function useDashboardData() {
   };
 
   const isLoading = carsQuery.isLoading || rentalsQuery.isLoading || maintenanceQuery.isLoading || 
-                    finesQuery.isLoading || insuranceQuery.isLoading || regoQuery.isLoading;
+                    finesQuery.isLoading || insuranceQuery.isLoading || regoQuery.isLoading ||
+                    historicalPaymentsQuery.isLoading || historicalExpensesQuery.isLoading;
 
   const isError = carsQuery.isError || rentalsQuery.isError || maintenanceQuery.isError || 
                   finesQuery.isError || insuranceQuery.isError || regoQuery.isError;
@@ -220,6 +298,7 @@ export function useDashboardData() {
     unpaidFines: finesQuery.data || [],
     expiringInsurance: insuranceQuery.data || [],
     expiringRego: regoQuery.data || [],
+    revenueChartData,
     isLoading,
     isError,
   };
