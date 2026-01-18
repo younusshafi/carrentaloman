@@ -22,6 +22,7 @@ export interface BulkImportResult {
     table: string;
     imported: number;
     failed: number;
+    skipped?: number;
   }[];
 }
 
@@ -152,16 +153,27 @@ export function useBulkImport() {
     mapping: TableMapping,
     idCache: IdCache,
     onProgress: (completed: number) => void
-  ): Promise<{ imported: number; failed: number }> => {
-    const { rows } = getSQLiteTableData(db, mapping.sourceTable);
+  ): Promise<{ imported: number; failed: number; skipped: number }> => {
+    let { rows } = getSQLiteTableData(db, mapping.sourceTable);
+    
+    // Apply row filter if defined
+    if (mapping.filterRow) {
+      const originalCount = rows.length;
+      rows = rows.filter(mapping.filterRow);
+      const skippedByFilter = originalCount - rows.length;
+      if (skippedByFilter > 0) {
+        console.log(`Filtered out ${skippedByFilter} rows from ${mapping.sourceTable}`);
+      }
+    }
     
     if (rows.length === 0) {
-      return { imported: 0, failed: 0 };
+      return { imported: 0, failed: 0, skipped: 0 };
     }
 
     const BATCH_SIZE = 50;
     let imported = 0;
     let failed = 0;
+    let skipped = 0;
 
     // Handle UPDATE operations (car_tracker, car_financials_summary)
     if (mapping.isUpdate) {
@@ -200,7 +212,7 @@ export function useBulkImport() {
         }
         onProgress(1);
       }
-      return { imported, failed };
+      return { imported, failed, skipped };
     }
 
     // Standard INSERT operations
@@ -278,7 +290,7 @@ export function useBulkImport() {
       onProgress(batch.length);
     }
 
-    return { imported, failed };
+    return { imported, failed, skipped };
   };
 
   const bulkImport = useCallback(async (
@@ -343,6 +355,7 @@ export function useBulkImport() {
           table: mapping.sourceTable,
           imported: result.imported,
           failed: result.failed,
+          skipped: result.skipped,
         });
 
         if (result.failed === 0 || result.imported > 0) {
