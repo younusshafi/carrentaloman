@@ -25,6 +25,27 @@ export interface BulkImportResult {
   }[];
 }
 
+export interface ValidationIssue {
+  table: string;
+  row: number;
+  column: string;
+  value: unknown;
+  message: string;
+  severity: 'error' | 'warning' | 'info';
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  totalRows: number;
+  issues: ValidationIssue[];
+  tableStats: {
+    table: string;
+    rows: number;
+    errors: number;
+    warnings: number;
+  }[];
+}
+
 // Cache for storing ID mappings between SQLite and Supabase
 interface IdCache {
   cars: Map<number, string>; // SQLite car_id -> Supabase UUID
@@ -36,6 +57,8 @@ interface IdCache {
 
 export function useBulkImport() {
   const [isImporting, setIsImporting] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const [progress, setProgress] = useState<BulkImportProgress>({
     currentTable: '',
     currentTableIndex: 0,
@@ -363,9 +386,181 @@ export function useBulkImport() {
     };
   }, []);
 
+  // Validate data before importing
+  const validateData = useCallback(async (
+    db: SqlDatabase,
+    selectedMappings: TableMapping[]
+  ): Promise<ValidationResult> => {
+    setIsValidating(true);
+
+    const issues: ValidationIssue[] = [];
+    const tableStats: ValidationResult['tableStats'] = [];
+    let totalRows = 0;
+
+    const orderedTables = getImportOrder(selectedMappings.map(m => m.sourceTable));
+    const orderedMappings = orderedTables
+      .map(table => selectedMappings.find(m => m.sourceTable === table))
+      .filter((m): m is TableMapping => m !== undefined);
+
+    for (const mapping of orderedMappings) {
+      const { rows } = getSQLiteTableData(db, mapping.sourceTable);
+      totalRows += rows.length;
+      let errors = 0;
+      let warnings = 0;
+
+      rows.forEach((row, rowIndex) => {
+        // Check for required fields based on target table
+        for (const colMap of mapping.columnMappings) {
+          const sourceValue = row[colMap.source];
+          const transformedValue = colMap.transform 
+            ? colMap.transform(sourceValue, row) 
+            : sourceValue;
+
+          // Check for null/empty values in required fields
+          const requiredFields: Record<string, string[]> = {
+            'cars': ['make', 'model', 'plate_number', 'year'],
+            'renters': ['first_name', 'last_name', 'phone'],
+            'rental_sessions': ['start_date', 'weekly_rent'],
+            'rental_payments': ['payment_date', 'amount'],
+            'insurance_records': ['policy_number', 'provider', 'start_date', 'expiry_date'],
+            'car_expenses': ['expense_type', 'expense_date', 'amount'],
+          };
+
+          const required = requiredFields[mapping.targetTable] || [];
+          if (required.includes(colMap.target)) {
+            if (transformedValue === null || transformedValue === undefined || transformedValue === '') {
+              issues.push({
+                table: mapping.sourceTable,
+                row: rowIndex + 1,
+                column: colMap.source,
+                value: sourceValue,
+                message: `Required field '${colMap.target}' is empty`,
+                severity: 'error',
+              });
+              errors++;
+            }
+          }
+
+          // Check for invalid numeric values
+          if (colMap.target === 'amount' || colMap.target === 'weekly_rent' || colMap.target === 'year') {
+            const num = Number(transformedValue);
+            if (transformedValue !== null && transformedValue !== undefined && isNaN(num)) {
+              issues.push({
+                table: mapping.sourceTable,
+                row: rowIndex + 1,
+                column: colMap.source,
+                value: sourceValue,
+                message: `Invalid numeric value for '${colMap.target}'`,
+                severity: 'warning',
+              });
+              warnings++;
+            }
+          }
+
+          // Check for invalid dates
+          if (colMap.target.includes('date') || colMap.target === 'expiry_date' || colMap.target === 'start_date') {
+            if (transformedValue && typeof transformedValue === 'string') {
+              const date = new Date(transformedValue);
+              if (isNaN(date.getTime())) {
+                issues.push({
+                  table: mapping.sourceTable,
+                  row: rowIndex + 1,
+                  column: colMap.source,
+                  value: sourceValue,
+                  message: `Invalid date format for '${colMap.target}'`,
+                  severity: 'warning',
+                });
+                warnings++;
+              }
+            }
+          }
+        }
+      });
+
+      tableStats.push({
+        table: mapping.sourceTable,
+        rows: rows.length,
+        errors,
+        warnings,
+      });
+    }
+
+    setIsValidating(false);
+
+    const hasErrors = issues.some(i => i.severity === 'error');
+    return {
+      isValid: !hasErrors,
+      totalRows,
+      issues,
+      tableStats,
+    };
+  }, []);
+
+  // Clear all data from target tables
+  const clearAllData = useCallback(async (): Promise<{ success: boolean; message: string }> => {
+    setIsClearing(true);
+
+    // Order matters - delete child tables first
+    const tablesToClear = [
+      'rental_km_logs',
+      'rental_payments',
+      'renter_instalments',
+      'instalment_payments',
+      'instalment_plans',
+      'traffic_fines',
+      'maintenance_tickets',
+      'insurance_records',
+      'rego_records',
+      'car_expenses',
+      'rental_sessions',
+      'renters',
+      'cars',
+    ];
+
+    let deleted = 0;
+    let failed = 0;
+
+    for (const table of tablesToClear) {
+      try {
+        const { error } = await supabase
+          .from(table as 'cars')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
+
+        if (error) {
+          console.error(`Error clearing ${table}:`, error);
+          failed++;
+        } else {
+          deleted++;
+        }
+      } catch (error) {
+        console.error(`Error clearing ${table}:`, error);
+        failed++;
+      }
+    }
+
+    setIsClearing(false);
+
+    if (failed === 0) {
+      return {
+        success: true,
+        message: `Successfully cleared all ${deleted} tables`,
+      };
+    } else {
+      return {
+        success: false,
+        message: `Cleared ${deleted} tables, ${failed} failed`,
+      };
+    }
+  }, []);
+
   return {
     bulkImport,
+    validateData,
+    clearAllData,
     isImporting,
+    isValidating,
+    isClearing,
     progress,
   };
 }
