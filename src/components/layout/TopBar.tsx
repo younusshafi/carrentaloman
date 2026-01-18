@@ -1,4 +1,4 @@
-import { Bell, Search, User, ChevronDown } from 'lucide-react';
+import { Bell, Search, User, ChevronDown, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -15,23 +15,37 @@ import { Badge } from '@/components/ui/badge';
 interface TopBarProps {
   title: string;
   subtitle?: string;
+  onMenuClick: () => void;
 }
 
-export function TopBar({ title, subtitle }: TopBarProps) {
+export function TopBar({ title, subtitle, onMenuClick }: TopBarProps) {
   return (
-    <header className="sticky top-0 z-30 h-16 bg-card border-b border-border flex items-center justify-between px-6">
-      {/* Page Title */}
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">{title}</h1>
-        {subtitle && (
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
-        )}
+    <header className="sticky top-0 z-30 h-16 bg-card border-b border-border flex items-center justify-between px-4 md:px-6">
+      {/* Left Side - Menu + Title */}
+      <div className="flex items-center gap-3">
+        {/* Mobile Menu Button */}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={onMenuClick}
+          className="md:hidden"
+        >
+          <Menu className="w-5 h-5" />
+        </Button>
+
+        {/* Page Title */}
+        <div>
+          <h1 className="text-lg md:text-xl font-semibold text-foreground">{title}</h1>
+          {subtitle && (
+            <p className="text-xs md:text-sm text-muted-foreground hidden sm:block">{subtitle}</p>
+          )}
+        </div>
       </div>
 
       {/* Right Side */}
-      <div className="flex items-center gap-4">
-        {/* Search */}
-        <div className="relative hidden md:block">
+      <div className="flex items-center gap-2 md:gap-4">
+        {/* Search - Desktop only */}
+        <div className="relative hidden lg:block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             type="search"
@@ -76,11 +90,11 @@ export function TopBar({ title, subtitle }: TopBarProps) {
                 <AvatarImage src="/placeholder.svg" alt="User" />
                 <AvatarFallback className="bg-accent text-accent-foreground">AD</AvatarFallback>
               </Avatar>
-              <div className="hidden md:flex flex-col items-start">
+              <div className="hidden lg:flex flex-col items-start">
                 <span className="text-sm font-medium">Admin User</span>
                 <span className="text-xs text-muted-foreground">admin@cargems.com</span>
               </div>
-              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              <ChevronDown className="w-4 h-4 text-muted-foreground hidden sm:block" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
