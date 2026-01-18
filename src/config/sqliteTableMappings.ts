@@ -199,8 +199,39 @@ export const sqliteTableMappings: TableMapping[] = [
     description: 'Vehicle registration records',
     dependsOn: ['cars'],
     requiresLookup: true,
+    // Skip rows without rego_due date
+    filterRow: (row) => {
+      const regoDue = row['rego_due'];
+      return !!regoDue;
+    },
     columnMappings: [
-      { source: 'rego_due', target: 'expiry_date' },
+      { 
+        source: 'rego_due', 
+        target: 'expiry_date',
+        transform: (value) => {
+          if (!value) return new Date().toISOString().split('T')[0];
+          const dateStr = String(value).trim();
+          
+          // Handle DD/MM/YYYY format
+          if (dateStr.includes('/')) {
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+              const [day, month, year] = parts;
+              if (!isNaN(Number(day)) && !isNaN(Number(month)) && !isNaN(Number(year))) {
+                const isoDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                const parsed = new Date(isoDate);
+                if (!isNaN(parsed.getTime())) return isoDate;
+              }
+            }
+          }
+          
+          // Try standard date parsing as fallback
+          const date = new Date(dateStr);
+          return isNaN(date.getTime()) 
+            ? new Date().toISOString().split('T')[0] 
+            : date.toISOString().split('T')[0];
+        }
+      },
       { 
         source: 'car_id', 
         target: 'rego_number',
