@@ -15,6 +15,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   FileUp,
   Upload,
   CheckCircle,
@@ -25,13 +36,16 @@ import {
   RefreshCw,
   HardDrive,
   Layers,
+  Trash2,
+  ShieldCheck,
+  Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { parseSQLiteFile, getSQLiteTableData, closeSQLiteDatabase, SQLiteData, SQLiteTable } from '@/utils/sqliteParser';
-import { useBulkImport } from '@/hooks/useBulkImport';
+import { useBulkImport, ValidationResult, ValidationIssue } from '@/hooks/useBulkImport';
 import { sqliteTableMappings, getTableMapping, TableMapping } from '@/config/sqliteTableMappings';
 
-type ImportStep = 'upload' | 'select-tables' | 'preview' | 'import' | 'complete';
+type ImportStep = 'upload' | 'select-tables' | 'preview' | 'validate' | 'import' | 'complete';
 
 export default function BulkImport() {
   const [currentStep, setCurrentStep] = useState<ImportStep>('upload');
@@ -40,17 +54,19 @@ export default function BulkImport() {
   const [previewTable, setPreviewTable] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const { bulkImport, isImporting, progress } = useBulkImport();
+  const { bulkImport, validateData, clearAllData, isImporting, isValidating, isClearing, progress } = useBulkImport();
   const [importResult, setImportResult] = useState<{
     success: boolean;
     message: string;
     details: { table: string; imported: number; failed: number }[];
   } | null>(null);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
 
   const steps = [
     { key: 'upload', label: 'Upload', icon: Upload },
     { key: 'select-tables', label: 'Select Tables', icon: Layers },
     { key: 'preview', label: 'Preview', icon: Database },
+    { key: 'validate', label: 'Validate', icon: ShieldCheck },
     { key: 'import', label: 'Import', icon: ArrowRight },
     { key: 'complete', label: 'Complete', icon: CheckCircle },
   ];
@@ -145,6 +161,19 @@ export default function BulkImport() {
     setCurrentStep('preview');
   };
 
+  const handleValidate = async () => {
+    if (!sqliteData || selectedTables.size === 0) return;
+    
+    setCurrentStep('validate');
+    
+    const mappingsToValidate = Array.from(selectedTables)
+      .map(t => getTableMapping(t))
+      .filter((m): m is TableMapping => m !== undefined);
+
+    const result = await validateData(sqliteData.db, mappingsToValidate);
+    setValidationResult(result);
+  };
+
   const handleStartImport = async () => {
     if (!sqliteData || selectedTables.size === 0) return;
     
@@ -165,6 +194,15 @@ export default function BulkImport() {
     }
   };
 
+  const handleClearData = async () => {
+    const result = await clearAllData();
+    if (result.success) {
+      toast.success(result.message);
+    } else {
+      toast.error(result.message);
+    }
+  };
+
   const handleReset = () => {
     if (sqliteData) {
       closeSQLiteDatabase(sqliteData.db);
@@ -173,9 +211,21 @@ export default function BulkImport() {
     setSelectedTables(new Set());
     setPreviewTable('');
     setImportResult(null);
+    setValidationResult(null);
     setCurrentStep('upload');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const getIssueIcon = (severity: ValidationIssue['severity']) => {
+    switch (severity) {
+      case 'error':
+        return <XCircle className="w-4 h-4 text-destructive" />;
+      case 'warning':
+        return <AlertTriangle className="w-4 h-4 text-warning" />;
+      case 'info':
+        return <Info className="w-4 h-4 text-muted-foreground" />;
     }
   };
 
@@ -275,15 +325,52 @@ export default function BulkImport() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm" disabled={isClearing}>
+                      {isClearing ? (
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4 mr-2" />
+                      )}
+                      Clear All Data
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Clear All Data?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete ALL data from the database including cars, renters, 
+                        rental sessions, payments, and all related records. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleClearData}>
+                        Yes, Clear All Data
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 <Button variant="outline" onClick={handleReset}>
                   Back
                 </Button>
                 <Button 
                   variant="accent" 
-                  onClick={handleStartImport}
-                  disabled={selectedTables.size === 0}
+                  onClick={handleValidate}
+                  disabled={selectedTables.size === 0 || isValidating}
                 >
-                  Import {selectedTables.size} Tables
+                  {isValidating ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Validating...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4 mr-2" />
+                      Validate & Import
+                    </>
+                  )}
                 </Button>
               </div>
             </CardHeader>
@@ -434,6 +521,178 @@ export default function BulkImport() {
                 </div>
               );
             })()}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Validation Step */}
+      {currentStep === 'validate' && validationResult && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5" />
+                Validation Results
+              </CardTitle>
+              <CardDescription>
+                {validationResult.isValid 
+                  ? `All ${validationResult.totalRows} rows passed validation` 
+                  : `Found ${validationResult.issues.filter(i => i.severity === 'error').length} errors and ${validationResult.issues.filter(i => i.severity === 'warning').length} warnings`
+                }
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setCurrentStep('select-tables')}>
+                Back
+              </Button>
+              <Button 
+                variant="accent" 
+                onClick={handleStartImport}
+                disabled={!validationResult.isValid && validationResult.issues.some(i => i.severity === 'error')}
+              >
+                {validationResult.isValid ? (
+                  <>Proceed with Import</>
+                ) : validationResult.issues.some(i => i.severity === 'error') ? (
+                  <>Fix Errors First</>
+                ) : (
+                  <>Proceed with Warnings</>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="bg-muted/30">
+                <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold">{validationResult.totalRows}</div>
+                  <div className="text-sm text-muted-foreground">Total Rows</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-muted/30">
+                <CardContent className="p-4 text-center">
+                  <div className="text-2xl font-bold">{validationResult.tableStats.length}</div>
+                  <div className="text-sm text-muted-foreground">Tables</div>
+                </CardContent>
+              </Card>
+              <Card className={`${validationResult.issues.filter(i => i.severity === 'error').length > 0 ? 'bg-destructive/10 border-destructive' : 'bg-muted/30'}`}>
+                <CardContent className="p-4 text-center">
+                  <div className={`text-2xl font-bold ${validationResult.issues.filter(i => i.severity === 'error').length > 0 ? 'text-destructive' : ''}`}>
+                    {validationResult.issues.filter(i => i.severity === 'error').length}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Errors</div>
+                </CardContent>
+              </Card>
+              <Card className={`${validationResult.issues.filter(i => i.severity === 'warning').length > 0 ? 'bg-warning/10 border-warning' : 'bg-muted/30'}`}>
+                <CardContent className="p-4 text-center">
+                  <div className={`text-2xl font-bold ${validationResult.issues.filter(i => i.severity === 'warning').length > 0 ? 'text-warning' : ''}`}>
+                    {validationResult.issues.filter(i => i.severity === 'warning').length}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Warnings</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Table Stats */}
+            <div>
+              <h3 className="text-sm font-medium mb-3">Table Breakdown</h3>
+              <div className="rounded-lg border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead>Table</TableHead>
+                      <TableHead className="text-right">Rows</TableHead>
+                      <TableHead className="text-right">Errors</TableHead>
+                      <TableHead className="text-right">Warnings</TableHead>
+                      <TableHead className="text-right">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {validationResult.tableStats.map((stat) => (
+                      <TableRow key={stat.table}>
+                        <TableCell className="font-medium">{stat.table}</TableCell>
+                        <TableCell className="text-right">{stat.rows}</TableCell>
+                        <TableCell className="text-right">
+                          {stat.errors > 0 && (
+                            <Badge variant="destructive">{stat.errors}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {stat.warnings > 0 && (
+                            <Badge className="bg-warning text-warning-foreground">{stat.warnings}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {stat.errors === 0 && stat.warnings === 0 ? (
+                            <Badge className="bg-success text-success-foreground">Ready</Badge>
+                          ) : stat.errors > 0 ? (
+                            <Badge variant="destructive">Has Errors</Badge>
+                          ) : (
+                            <Badge className="bg-warning text-warning-foreground">Has Warnings</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {/* Issue Details */}
+            {validationResult.issues.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium mb-3">Issue Details (showing first 50)</h3>
+                <div className="rounded-lg border overflow-hidden max-h-96 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="w-10"></TableHead>
+                        <TableHead>Table</TableHead>
+                        <TableHead>Row</TableHead>
+                        <TableHead>Column</TableHead>
+                        <TableHead>Value</TableHead>
+                        <TableHead>Issue</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {validationResult.issues.slice(0, 50).map((issue, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell>{getIssueIcon(issue.severity)}</TableCell>
+                          <TableCell className="font-mono text-sm">{issue.table}</TableCell>
+                          <TableCell className="font-mono text-sm">{issue.row}</TableCell>
+                          <TableCell className="font-mono text-sm">{issue.column}</TableCell>
+                          <TableCell className="font-mono text-sm max-w-[150px] truncate">
+                            {issue.value !== null && issue.value !== undefined 
+                              ? String(issue.value) 
+                              : <span className="text-muted-foreground">NULL</span>
+                            }
+                          </TableCell>
+                          <TableCell className="text-sm">{issue.message}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                {validationResult.issues.length > 50 && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    ...and {validationResult.issues.length - 50} more issues
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Success Message */}
+            {validationResult.isValid && (
+              <div className="bg-success/10 border border-success rounded-lg p-4 flex items-center gap-3">
+                <CheckCircle className="w-6 h-6 text-success" />
+                <div>
+                  <h4 className="font-medium text-success">All data is valid!</h4>
+                  <p className="text-sm text-muted-foreground">
+                    You can proceed with the import. All {validationResult.totalRows} rows will be imported.
+                  </p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
