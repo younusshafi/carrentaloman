@@ -1,0 +1,103 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import type { Database } from '@/integrations/supabase/types';
+
+type AppRole = Database['public']['Enums']['app_role'];
+
+interface UserWithRole {
+  id: string;
+  email: string;
+  created_at: string;
+  role: AppRole | null;
+  display_name: string | null;
+}
+
+export function useAdminUsers() {
+  const queryClient = useQueryClient();
+
+  const { data: users = [], isLoading, error } = useQuery({
+    queryKey: ['admin-users'],
+    queryFn: async (): Promise<UserWithRole[]> => {
+      // Fetch profiles (which have user_id linked to auth.users)
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, display_name, created_at');
+
+      if (profilesError) throw profilesError;
+
+      // Fetch all user roles
+      const { data: roles, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('user_id, role');
+
+      if (rolesError) throw rolesError;
+
+      // Create a map of user_id to role
+      const roleMap = new Map(roles?.map(r => [r.user_id, r.role]) || []);
+
+      // Combine the data - we need to get emails from auth metadata
+      // Since we can't query auth.users directly, we'll use profiles
+      const usersWithRoles = profiles?.map(profile => ({
+        id: profile.user_id,
+        email: '', // Will be populated from session/auth if available
+        created_at: profile.created_at,
+        role: roleMap.get(profile.user_id) || null,
+        display_name: profile.display_name,
+      })) || [];
+
+      return usersWithRoles;
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: string; role: AppRole | null }) => {
+      if (role === null) {
+        // Remove role
+        const { error } = await supabase
+          .from('user_roles')
+          .delete()
+          .eq('user_id', userId);
+        if (error) throw error;
+      } else {
+        // Check if user already has a role
+        const { data: existing } = await supabase
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (existing) {
+          // Update existing role
+          const { error } = await supabase
+            .from('user_roles')
+            .update({ role })
+            .eq('user_id', userId);
+          if (error) throw error;
+        } else {
+          // Insert new role
+          const { error } = await supabase
+            .from('user_roles')
+            .insert({ user_id: userId, role });
+          if (error) throw error;
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast.success('User role updated successfully');
+    },
+    onError: (error) => {
+      console.error('Error updating role:', error);
+      toast.error('Failed to update user role');
+    },
+  });
+
+  return {
+    users,
+    isLoading,
+    error,
+    updateRole: updateRoleMutation.mutate,
+    isUpdating: updateRoleMutation.isPending,
+  };
+}
