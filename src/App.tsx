@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { AdminRoute } from "@/components/auth/AdminRoute";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Fleet from "./pages/Fleet";
@@ -19,6 +20,7 @@ import WhatsApp from "./pages/WhatsApp";
 import DataImport from "./pages/DataImport";
 import BulkImport from "./pages/BulkImport";
 import Settings from "./pages/Settings";
+import UserManagement from "./pages/UserManagement";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -47,8 +49,9 @@ const App = () => (
             <Route path="/fines" element={<ProtectedRoute><Fines /></ProtectedRoute>} />
             <Route path="/insurance" element={<ProtectedRoute><Insurance /></ProtectedRoute>} />
             <Route path="/whatsapp" element={<ProtectedRoute><WhatsApp /></ProtectedRoute>} />
-            <Route path="/import" element={<ProtectedRoute><DataImport /></ProtectedRoute>} />
-            <Route path="/bulk-import" element={<ProtectedRoute><BulkImport /></ProtectedRoute>} />
+            <Route path="/import" element={<AdminRoute requireAdmin><DataImport /></AdminRoute>} />
+            <Route path="/bulk-import" element={<AdminRoute requireAdmin><BulkImport /></AdminRoute>} />
+            <Route path="/admin/users" element={<AdminRoute requireAdmin><UserManagement /></AdminRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>

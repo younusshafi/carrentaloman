@@ -15,29 +15,32 @@ import {
   ChevronLeft,
   ChevronRight,
   Gem,
-  X,
   HardDrive,
+  UserCog,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 
+import { useUserRole } from '@/hooks/useUserRole';
+
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: Car, label: 'Fleet', path: '/fleet' },
-  { icon: CalendarRange, label: 'Rentals', path: '/rentals' },
-  { icon: DollarSign, label: 'Financials', path: '/financials' },
-  { icon: Shield, label: 'Insurance & Rego', path: '/insurance' },
-  { icon: Wrench, label: 'Maintenance', path: '/maintenance' },
-  { icon: AlertTriangle, label: 'Fines', path: '/fines' },
-  { icon: Users, label: 'Customers', path: '/customers' },
-  { icon: MessageSquare, label: 'WhatsApp', path: '/whatsapp' },
-  { icon: HardDrive, label: 'Bulk Import', path: '/bulk-import' },
-  { icon: FileUp, label: 'Table Import', path: '/import' },
+  { icon: LayoutDashboard, label: 'Dashboard', path: '/', adminOnly: false },
+  { icon: Car, label: 'Fleet', path: '/fleet', adminOnly: false },
+  { icon: CalendarRange, label: 'Rentals', path: '/rentals', adminOnly: false },
+  { icon: DollarSign, label: 'Financials', path: '/financials', adminOnly: false },
+  { icon: Shield, label: 'Insurance & Rego', path: '/insurance', adminOnly: false },
+  { icon: Wrench, label: 'Maintenance', path: '/maintenance', adminOnly: false },
+  { icon: AlertTriangle, label: 'Fines', path: '/fines', adminOnly: false },
+  { icon: Users, label: 'Customers', path: '/customers', adminOnly: false },
+  { icon: MessageSquare, label: 'WhatsApp', path: '/whatsapp', adminOnly: false },
+  { icon: HardDrive, label: 'Bulk Import', path: '/bulk-import', adminOnly: true },
+  { icon: FileUp, label: 'Table Import', path: '/import', adminOnly: true },
 ];
 
 const bottomNavItems = [
-  { icon: Settings, label: 'Settings', path: '/settings' },
+  { icon: UserCog, label: 'User Management', path: '/admin/users', adminOnly: true },
+  { icon: Settings, label: 'Settings', path: '/settings', adminOnly: false },
 ];
 
 interface SidebarProps {
@@ -49,6 +52,10 @@ interface SidebarProps {
 
 function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: boolean; setCollapsed: (collapsed: boolean) => void; onNavClick?: () => void }) {
   const location = useLocation();
+  const { isAdmin } = useUserRole();
+  
+  const filteredNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
+  const filteredBottomNavItems = bottomNavItems.filter(item => !item.adminOnly || isAdmin);
 
   return (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
@@ -75,7 +82,7 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-2 scrollbar-thin">
         <ul className="space-y-1">
-          {navItems.map((item) => {
+          {filteredNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <li key={item.path}>
@@ -112,7 +119,7 @@ function SidebarContent({ collapsed, setCollapsed, onNavClick }: { collapsed: bo
       {/* Bottom Navigation */}
       <div className="border-t border-sidebar-border py-4 px-2">
         <ul className="space-y-1">
-          {bottomNavItems.map((item) => {
+          {filteredBottomNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <li key={item.path}>
