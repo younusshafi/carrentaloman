@@ -17,6 +17,7 @@ import Fines from "./pages/Fines";
 import Insurance from "./pages/Insurance";
 import WhatsApp from "./pages/WhatsApp";
 import DataImport from "./pages/DataImport";
+import BulkImport from "./pages/BulkImport";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -47,6 +48,7 @@ const App = () => (
             <Route path="/insurance" element={<ProtectedRoute><Insurance /></ProtectedRoute>} />
             <Route path="/whatsapp" element={<ProtectedRoute><WhatsApp /></ProtectedRoute>} />
             <Route path="/import" element={<ProtectedRoute><DataImport /></ProtectedRoute>} />
+            <Route path="/bulk-import" element={<ProtectedRoute><BulkImport /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
