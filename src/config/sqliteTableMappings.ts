@@ -145,16 +145,48 @@ export const sqliteTableMappings: TableMapping[] = [
     description: 'Insurance policy records',
     dependsOn: ['cars'],
     requiresLookup: true,
+    // Skip rows without insurance_due date
+    filterRow: (row) => {
+      const insuranceDue = row['insurance_due'];
+      return !!insuranceDue;
+    },
     columnMappings: [
-      { source: 'insurance_due', target: 'expiry_date' },
-      { source: 'policy_number', target: 'policy_number' },
-      { source: 'company', target: 'provider' },
+      { 
+        source: 'insurance_due', 
+        target: 'expiry_date',
+        transform: (value) => {
+          if (!value) return new Date().toISOString().split('T')[0];
+          const dateStr = String(value);
+          const date = new Date(dateStr);
+          return isNaN(date.getTime()) ? new Date().toISOString().split('T')[0] : dateStr;
+        }
+      },
+      { 
+        source: 'policy_number', 
+        target: 'policy_number',
+        transform: (value) => String(value || 'PENDING')
+      },
+      { 
+        source: 'company', 
+        target: 'provider',
+        transform: (value) => String(value || 'Unknown')
+      },
       { 
         source: 'insurance_due', 
         target: 'start_date',
         transform: (value) => {
-          if (!value) return null;
+          if (!value) {
+            // Default: 1 year before today
+            const date = new Date();
+            date.setFullYear(date.getFullYear() - 1);
+            return date.toISOString().split('T')[0];
+          }
           const expiry = new Date(String(value));
+          if (isNaN(expiry.getTime())) {
+            const date = new Date();
+            date.setFullYear(date.getFullYear() - 1);
+            return date.toISOString().split('T')[0];
+          }
           expiry.setFullYear(expiry.getFullYear() - 1);
           return expiry.toISOString().split('T')[0];
         }
