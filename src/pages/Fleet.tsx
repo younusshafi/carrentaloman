@@ -23,13 +23,12 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { mockCars } from '@/data/mockData';
-import { Car as CarType, CarStatus } from '@/types';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useFleetData, Car as CarType } from '@/hooks/useFleetData';
 import {
   Car,
   Plus,
   Search,
-  Filter,
   MoreHorizontal,
   Eye,
   Edit,
@@ -44,14 +43,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+type CarStatus = 'available' | 'rented' | 'maintenance' | 'reserved' | 'sold' | 'all';
+
 export default function Fleet() {
   const navigate = useNavigate();
+  const { cars, isLoading, isError } = useFleetData();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<CarStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<CarStatus>('all');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-  const filteredCars = mockCars.filter((car) => {
+  const filteredCars = cars.filter((car) => {
     const matchesSearch =
       car.make.toLowerCase().includes(searchQuery.toLowerCase()) ||
       car.model.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -69,7 +71,7 @@ export default function Fleet() {
       cell: (row) => (
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center overflow-hidden">
-            {row.images[0] ? (
+            {row.images?.[0] ? (
               <img src={row.images[0]} alt={`${row.make} ${row.model}`} className="w-full h-full object-cover" />
             ) : (
               <Car className="w-6 h-6 text-muted-foreground" />
@@ -92,13 +94,13 @@ export default function Fleet() {
     {
       key: 'type',
       header: 'Body Type',
-      cell: (row) => <span className="text-sm">{row.body_type}</span>,
+      cell: (row) => <span className="text-sm">{row.body_type || '-'}</span>,
     },
     {
       key: 'purchase',
       header: 'Purchase Price',
       cell: (row) => (
-        <span className="font-medium">${row.purchase_price.toLocaleString()}</span>
+        <span className="font-medium">${Number(row.purchase_price || 0).toLocaleString()}</span>
       ),
     },
     {
@@ -136,13 +138,36 @@ export default function Fleet() {
   ];
 
   const statusCounts = {
-    all: mockCars.length,
-    available: mockCars.filter(c => c.status === 'available').length,
-    rented: mockCars.filter(c => c.status === 'rented').length,
-    maintenance: mockCars.filter(c => c.status === 'maintenance').length,
-    reserved: mockCars.filter(c => c.status === 'reserved').length,
-    sold: mockCars.filter(c => c.status === 'sold').length,
+    all: cars.length,
+    available: cars.filter(c => c.status === 'available').length,
+    rented: cars.filter(c => c.status === 'rented').length,
+    maintenance: cars.filter(c => c.status === 'maintenance').length,
+    reserved: cars.filter(c => c.status === 'reserved').length,
+    sold: cars.filter(c => c.status === 'sold').length,
   };
+
+  if (isLoading) {
+    return (
+      <MainLayout title="Fleet Management" subtitle="Loading vehicles...">
+        <div className="space-y-4">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (isError) {
+    return (
+      <MainLayout title="Fleet Management" subtitle="Error loading data">
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-destructive">Failed to load fleet data. Please try again.</p>
+          </CardContent>
+        </Card>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout title="Fleet Management" subtitle="Manage your vehicle inventory">
@@ -277,7 +302,7 @@ export default function Fleet() {
               onClick={() => navigate(`/fleet/${car.id}`)}
             >
               <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
-                {car.images[0] ? (
+                {car.images?.[0] ? (
                   <img src={car.images[0]} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover" />
                 ) : (
                   <Car className="w-12 h-12 text-muted-foreground" />
@@ -293,7 +318,7 @@ export default function Fleet() {
                 </div>
                 <div className="flex items-center justify-between mt-3 pt-3 border-t">
                   <span className="font-mono text-sm bg-muted px-2 py-1 rounded">{car.plate_number}</span>
-                  <span className="text-sm font-medium">${car.purchase_price.toLocaleString()}</span>
+                  <span className="text-sm font-medium">${Number(car.purchase_price || 0).toLocaleString()}</span>
                 </div>
               </CardContent>
             </Card>
