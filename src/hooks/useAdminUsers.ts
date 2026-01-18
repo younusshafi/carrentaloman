@@ -11,6 +11,8 @@ interface UserWithRole {
   created_at: string;
   role: AppRole | null;
   display_name: string | null;
+  is_approved: boolean;
+  approved_at: string | null;
 }
 
 export function useAdminUsers() {
@@ -22,7 +24,7 @@ export function useAdminUsers() {
       // Fetch profiles (which have user_id linked to auth.users)
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('user_id, display_name, created_at');
+        .select('user_id, display_name, created_at, is_approved, approved_at');
 
       if (profilesError) throw profilesError;
 
@@ -36,14 +38,15 @@ export function useAdminUsers() {
       // Create a map of user_id to role
       const roleMap = new Map(roles?.map(r => [r.user_id, r.role]) || []);
 
-      // Combine the data - we need to get emails from auth metadata
-      // Since we can't query auth.users directly, we'll use profiles
+      // Combine the data
       const usersWithRoles = profiles?.map(profile => ({
         id: profile.user_id,
-        email: '', // Will be populated from session/auth if available
+        email: '',
         created_at: profile.created_at,
         role: roleMap.get(profile.user_id) || null,
         display_name: profile.display_name,
+        is_approved: profile.is_approved,
+        approved_at: profile.approved_at,
       })) || [];
 
       return usersWithRoles;
@@ -93,11 +96,34 @@ export function useAdminUsers() {
     },
   });
 
+  const approveUserMutation = useMutation({
+    mutationFn: async ({ userId, approve }: { userId: string; approve: boolean }) => {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          is_approved: approve,
+          approved_at: approve ? new Date().toISOString() : null,
+        })
+        .eq('user_id', userId);
+      if (error) throw error;
+    },
+    onSuccess: (_, { approve }) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast.success(approve ? 'User approved successfully' : 'User approval revoked');
+    },
+    onError: (error) => {
+      console.error('Error updating approval:', error);
+      toast.error('Failed to update user approval');
+    },
+  });
+
   return {
     users,
     isLoading,
     error,
     updateRole: updateRoleMutation.mutate,
     isUpdating: updateRoleMutation.isPending,
+    approveUser: approveUserMutation.mutate,
+    isApproving: approveUserMutation.isPending,
   };
 }
