@@ -4,6 +4,12 @@ export interface ParsedData {
   headers: string[];
   rows: Record<string, unknown>[];
   fileName: string;
+  isSQLite?: boolean;
+}
+
+export function isSQLiteFile(file: File): boolean {
+  const ext = file.name.toLowerCase();
+  return ext.endsWith('.sqlite') || ext.endsWith('.db') || ext.endsWith('.sqlite3');
 }
 
 export async function parseFile(file: File): Promise<ParsedData> {
