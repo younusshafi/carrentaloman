@@ -19,6 +19,21 @@ export interface SQLiteData {
   fileName: string;
 }
 
+// Validate table names to prevent SQL injection
+// Allows alphanumeric characters, underscores, and spaces (common in SQLite)
+function validateTableName(name: string): string {
+  // Check for valid SQLite identifier pattern
+  // Allows letters, numbers, underscores, and spaces (which SQLite supports)
+  if (!/^[a-zA-Z_][a-zA-Z0-9_ ]*$/.test(name)) {
+    throw new Error(`Invalid table name: ${name}. Table names must start with a letter or underscore and contain only alphanumeric characters, underscores, or spaces.`);
+  }
+  // Additional check for maximum reasonable length
+  if (name.length > 128) {
+    throw new Error(`Table name too long: ${name}. Maximum length is 128 characters.`);
+  }
+  return name;
+}
+
 async function initSQL(): Promise<SqlJsStatic> {
   if (SQL) return SQL;
   
@@ -52,8 +67,11 @@ export async function parseSQLiteFile(file: File): Promise<SQLiteData> {
   const tables: SQLiteTable[] = [];
   
   for (const tableName of tableNames) {
+    // Validate table name before using in query
+    const safeName = validateTableName(tableName);
+    
     // Get column info using PRAGMA
-    const columnsResult = db.exec(`PRAGMA table_info("${tableName}")`);
+    const columnsResult = db.exec(`PRAGMA table_info("${safeName}")`);
     
     const columns: SQLiteColumn[] = columnsResult.length > 0
       ? columnsResult[0].values.map((row) => ({
@@ -63,11 +81,11 @@ export async function parseSQLiteFile(file: File): Promise<SQLiteData> {
       : [];
     
     // Get row count
-    const countResult = db.exec(`SELECT COUNT(*) FROM "${tableName}"`);
+    const countResult = db.exec(`SELECT COUNT(*) FROM "${safeName}"`);
     const rowCount = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0;
     
     tables.push({
-      name: tableName,
+      name: safeName,
       columns,
       rowCount,
     });
@@ -85,9 +103,15 @@ export function getSQLiteTableData(
   tableName: string,
   limit?: number
 ): { headers: string[]; rows: Record<string, unknown>[] } {
-  const query = limit 
-    ? `SELECT * FROM "${tableName}" LIMIT ${limit}`
-    : `SELECT * FROM "${tableName}"`;
+  // Validate table name before using in query
+  const safeName = validateTableName(tableName);
+  
+  // Validate limit parameter
+  const safeLimit = limit !== undefined ? Math.max(0, Math.floor(Number(limit))) : undefined;
+  
+  const query = safeLimit !== undefined
+    ? `SELECT * FROM "${safeName}" LIMIT ${safeLimit}`
+    : `SELECT * FROM "${safeName}"`;
   
   const result = db.exec(query);
   

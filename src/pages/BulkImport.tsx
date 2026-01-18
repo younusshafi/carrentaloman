@@ -14,17 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog';
 import {
   FileUp,
   Upload,
@@ -47,11 +37,14 @@ import { sqliteTableMappings, getTableMapping, TableMapping } from '@/config/sql
 
 type ImportStep = 'upload' | 'select-tables' | 'preview' | 'validate' | 'import' | 'complete';
 
+const CLEAR_DATA_CONFIRMATION_TEXT = 'DELETE ALL DATA';
+
 export default function BulkImport() {
   const [currentStep, setCurrentStep] = useState<ImportStep>('upload');
   const [sqliteData, setSqliteData] = useState<SQLiteData | null>(null);
   const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
   const [previewTable, setPreviewTable] = useState<string>('');
+  const [showClearDialog, setShowClearDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { bulkImport, validateData, clearAllData, isImporting, isValidating, isClearing, progress } = useBulkImport();
@@ -196,6 +189,7 @@ export default function BulkImport() {
 
   const handleClearData = async () => {
     const result = await clearAllData();
+    setShowClearDialog(false);
     if (result.success) {
       toast.success(result.message);
     } else {
@@ -315,33 +309,19 @@ export default function BulkImport() {
                     Remove all existing data from the database before uploading a new file
                   </p>
                 </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm" disabled={isClearing}>
-                      {isClearing ? (
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4 mr-2" />
-                      )}
-                      Clear All Data
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Clear All Data?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete ALL data from the database including cars, renters, 
-                        rental sessions, payments, and all related records. This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleClearData}>
-                        Yes, Clear All Data
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  disabled={isClearing}
+                  onClick={() => setShowClearDialog(true)}
+                >
+                  {isClearing ? (
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Clear All Data
+                </Button>
               </div>
             </div>
           </CardContent>
@@ -364,33 +344,19 @@ export default function BulkImport() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm" disabled={isClearing}>
-                      {isClearing ? (
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4 mr-2" />
-                      )}
-                      Clear All Data
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Clear All Data?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete ALL data from the database including cars, renters, 
-                        rental sessions, payments, and all related records. This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleClearData}>
-                        Yes, Clear All Data
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  disabled={isClearing}
+                  onClick={() => setShowClearDialog(true)}
+                >
+                  {isClearing ? (
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Clear All Data
+                </Button>
                 <Button variant="outline" onClick={handleReset}>
                   Back
                 </Button>
@@ -839,33 +805,18 @@ export default function BulkImport() {
               </Table>
 
               <div className="flex flex-wrap gap-4 justify-center pt-4">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" disabled={isClearing}>
-                      {isClearing ? (
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4 mr-2" />
-                      )}
-                      Clear All Data
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Clear All Data?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete ALL data from the database including cars, renters, 
-                        rental sessions, payments, and all related records. This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleClearData}>
-                        Yes, Clear All Data
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <Button 
+                  variant="destructive" 
+                  disabled={isClearing}
+                  onClick={() => setShowClearDialog(true)}
+                >
+                  {isClearing ? (
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Clear All Data
+                </Button>
                 <Button variant="outline" onClick={handleReset}>
                   Import Another Database
                 </Button>
@@ -877,6 +828,17 @@ export default function BulkImport() {
           </CardContent>
         </Card>
       )}
+
+      {/* Confirmation Dialog for Clear All Data */}
+      <ConfirmDeleteDialog
+        open={showClearDialog}
+        onOpenChange={setShowClearDialog}
+        onConfirm={handleClearData}
+        title="Clear All Data?"
+        description="This will permanently delete ALL data from the database including cars, renters, rental sessions, payments, and all related records. This action cannot be undone."
+        confirmationText={CLEAR_DATA_CONFIRMATION_TEXT}
+        isLoading={isClearing}
+      />
     </MainLayout>
   );
 }
