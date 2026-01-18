@@ -24,8 +24,8 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { mockRentalSessions, mockCars, mockRenters } from '@/data/mockData';
-import { RentalSession } from '@/types';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useRentalsData, RentalSession } from '@/hooks/useRentalsData';
 import {
   Plus,
   Search,
@@ -50,11 +50,20 @@ import {
 
 export default function Rentals() {
   const navigate = useNavigate();
+  const { 
+    activeRentals, 
+    completedRentals, 
+    timelineData,
+    availableCars,
+    availableRenters,
+    weeklyRevenue,
+    endingSoon,
+    isLoading,
+    isError 
+  } = useRentalsData();
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-
-  const activeRentals = mockRentalSessions.filter(r => r.status === 'active' || r.status === 'extended');
-  const completedRentals = mockRentalSessions.filter(r => r.status === 'completed' || r.status === 'cancelled');
 
   const columns: Column<RentalSession>[] = [
     {
@@ -92,10 +101,12 @@ export default function Rentals() {
       header: 'Rental Period',
       cell: (row) => (
         <div className="text-sm">
-          <p>{new Date(row.start_date).toLocaleDateString()} - {new Date(row.end_date).toLocaleDateString()}</p>
-          <p className="text-muted-foreground">
-            {Math.ceil((new Date(row.end_date).getTime() - new Date(row.start_date).getTime()) / (1000 * 60 * 60 * 24 * 7))} weeks
-          </p>
+          <p>{new Date(row.start_date).toLocaleDateString()} - {row.end_date ? new Date(row.end_date).toLocaleDateString() : 'Ongoing'}</p>
+          {row.end_date && (
+            <p className="text-muted-foreground">
+              {Math.ceil((new Date(row.end_date).getTime() - new Date(row.start_date).getTime()) / (1000 * 60 * 60 * 24 * 7))} weeks
+            </p>
+          )}
         </div>
       ),
     },
@@ -107,12 +118,12 @@ export default function Rentals() {
     {
       key: 'bond',
       header: 'Bond',
-      cell: (row) => <span className="text-sm">${row.bond_amount}</span>,
+      cell: (row) => <span className="text-sm">${row.bond_amount || 0}</span>,
     },
     {
       key: 'total',
       header: 'Total',
-      cell: (row) => <span className="font-semibold">${row.total_amount.toLocaleString()}</span>,
+      cell: (row) => <span className="font-semibold">${Number(row.total_amount || 0).toLocaleString()}</span>,
     },
     {
       key: 'status',
@@ -157,23 +168,28 @@ export default function Rentals() {
     },
   ];
 
-  // Timeline view data
-  const timelineData = activeRentals.map(rental => {
-    const startDate = new Date(rental.start_date);
-    const endDate = new Date(rental.end_date);
-    const today = new Date();
-    const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const daysElapsed = Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const progress = Math.min(100, Math.max(0, (daysElapsed / totalDays) * 100));
-    const daysRemaining = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (isLoading) {
+    return (
+      <MainLayout title="Rental Operations" subtitle="Loading rentals...">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24" />)}
+        </div>
+        <Skeleton className="h-64" />
+      </MainLayout>
+    );
+  }
 
-    return {
-      ...rental,
-      progress,
-      daysRemaining,
-      totalDays,
-    };
-  });
+  if (isError) {
+    return (
+      <MainLayout title="Rental Operations" subtitle="Error loading data">
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-destructive">Failed to load rental data. Please try again.</p>
+          </CardContent>
+        </Card>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout title="Rental Operations" subtitle="Manage rentals and bookings">
@@ -199,7 +215,7 @@ export default function Rentals() {
                 <DollarSign className="w-5 h-5 text-success" />
               </div>
               <div>
-                <p className="text-2xl font-bold">${activeRentals.reduce((sum, r) => sum + r.weekly_rent, 0)}</p>
+                <p className="text-2xl font-bold">${weeklyRevenue}</p>
                 <p className="text-sm text-muted-foreground">Weekly Revenue</p>
               </div>
             </div>
@@ -212,7 +228,7 @@ export default function Rentals() {
                 <Clock className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{timelineData.filter(r => r.daysRemaining <= 7 && r.daysRemaining > 0).length}</p>
+                <p className="text-2xl font-bold">{endingSoon}</p>
                 <p className="text-sm text-muted-foreground">Ending Soon</p>
               </div>
             </div>
@@ -225,7 +241,7 @@ export default function Rentals() {
                 <Car className="w-5 h-5 text-accent" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{mockCars.filter(c => c.status === 'available').length}</p>
+                <p className="text-2xl font-bold">{availableCars.length}</p>
                 <p className="text-sm text-muted-foreground">Available Cars</p>
               </div>
             </div>
@@ -263,7 +279,7 @@ export default function Rentals() {
                     <SelectValue placeholder="Choose a car" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockCars.filter(c => c.status === 'available').map((car) => (
+                    {availableCars.map((car) => (
                       <SelectItem key={car.id} value={car.id}>
                         {car.make} {car.model} ({car.plate_number})
                       </SelectItem>
@@ -278,7 +294,7 @@ export default function Rentals() {
                     <SelectValue placeholder="Choose a renter" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockRenters.filter(r => !r.is_blacklisted).map((renter) => (
+                    {availableRenters.map((renter) => (
                       <SelectItem key={renter.id} value={renter.id}>
                         {renter.first_name} {renter.last_name}
                       </SelectItem>
@@ -330,55 +346,59 @@ export default function Rentals() {
               <CardDescription>Visual overview of active rentals</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {timelineData.map((rental) => (
-                  <div key={rental.id} className="p-4 bg-muted/50 rounded-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-card rounded-lg flex items-center justify-center">
-                          <Car className="w-5 h-5 text-muted-foreground" />
+              {timelineData.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">No active rentals</p>
+              ) : (
+                <div className="space-y-4">
+                  {timelineData.map((rental) => (
+                    <div key={rental.id} className="p-4 bg-muted/50 rounded-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-card rounded-lg flex items-center justify-center">
+                            <Car className="w-5 h-5 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{rental.car?.make} {rental.car?.model}</p>
+                            <p className="text-sm text-muted-foreground">{rental.car?.plate_number}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">{rental.car?.make} {rental.car?.model}</p>
-                          <p className="text-sm text-muted-foreground">{rental.car?.plate_number}</p>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className="font-medium">{rental.renter?.first_name} {rental.renter?.last_name}</p>
+                            <p className="text-sm text-muted-foreground">${rental.weekly_rent}/week</p>
+                          </div>
+                          <Button variant="outline" size="sm" onClick={() => navigate(`/rentals/${rental.id}`)}>
+                            View
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="font-medium">{rental.renter?.first_name} {rental.renter?.last_name}</p>
-                          <p className="text-sm text-muted-foreground">${rental.weekly_rent}/week</p>
+                      
+                      {/* Progress Bar */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">
+                            {new Date(rental.start_date).toLocaleDateString()}
+                          </span>
+                          <span className={`font-medium ${rental.daysRemaining <= 7 ? 'text-warning' : ''}`}>
+                            {rental.daysRemaining > 0 ? `${rental.daysRemaining} days remaining` : 'Ending today'}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {rental.end_date ? new Date(rental.end_date).toLocaleDateString() : 'Ongoing'}
+                          </span>
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => navigate(`/rentals/${rental.id}`)}>
-                          View
-                        </Button>
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              rental.daysRemaining <= 7 ? 'bg-warning' : 'bg-info'
+                            }`}
+                            style={{ width: `${rental.progress}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
-                    
-                    {/* Progress Bar */}
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          {new Date(rental.start_date).toLocaleDateString()}
-                        </span>
-                        <span className={`font-medium ${rental.daysRemaining <= 7 ? 'text-warning' : ''}`}>
-                          {rental.daysRemaining > 0 ? `${rental.daysRemaining} days remaining` : 'Ending today'}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {new Date(rental.end_date).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            rental.daysRemaining <= 7 ? 'bg-warning' : 'bg-info'
-                          }`}
-                          style={{ width: `${rental.progress}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -388,6 +408,7 @@ export default function Rentals() {
             columns={columns}
             data={activeRentals}
             onRowClick={(row) => navigate(`/rentals/${row.id}`)}
+            emptyMessage="No active rentals"
           />
         </TabsContent>
 

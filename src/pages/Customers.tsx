@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { DataTable, Column } from '@/components/shared/DataTable';
-import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -19,23 +18,20 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { mockRenters, mockRentalSessions, mockTrafficFines } from '@/data/mockData';
-import { Renter } from '@/types';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useCustomersData, Renter } from '@/hooks/useCustomersData';
 import {
   Plus,
   Search,
   User,
-  Phone,
-  Mail,
   AlertTriangle,
   Calendar,
-  DollarSign,
-  FileText,
+  Ban,
+  Upload,
   MoreHorizontal,
   Eye,
   Edit,
-  Ban,
-  Upload,
+  FileText,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -46,44 +42,35 @@ import {
 
 export default function Customers() {
   const navigate = useNavigate();
+  const { 
+    renters, 
+    activeRenters, 
+    blacklistedRenters, 
+    currentlyRenting,
+    withUnpaidFines,
+    getRenterStats, 
+    isLoading,
+    isError 
+  } = useCustomersData();
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-  const activeRenters = mockRenters.filter(r => !r.is_blacklisted);
-  const blacklistedRenters = mockRenters.filter(r => r.is_blacklisted);
-
-  const filteredRenters = mockRenters.filter((renter) => {
+  const filteredRenters = renters.filter((renter) => {
     const searchLower = searchQuery.toLowerCase();
     return (
       renter.first_name.toLowerCase().includes(searchLower) ||
       renter.last_name.toLowerCase().includes(searchLower) ||
-      renter.email.toLowerCase().includes(searchLower) ||
+      (renter.email?.toLowerCase().includes(searchLower) || false) ||
       renter.phone.includes(searchQuery)
     );
   });
-
-  const getRenterStats = (renterId: string) => {
-    const rentals = mockRentalSessions.filter(r => r.renter_id === renterId);
-    const fines = mockTrafficFines.filter(f => f.renter_id === renterId);
-    const unpaidFines = fines.filter(f => !f.is_paid);
-    const totalSpent = rentals.reduce((sum, r) => sum + r.total_amount, 0);
-
-    return {
-      totalRentals: rentals.length,
-      activeRentals: rentals.filter(r => r.status === 'active').length,
-      totalFines: fines.length,
-      unpaidFines: unpaidFines.length,
-      outstandingAmount: unpaidFines.reduce((sum, f) => sum + f.amount, 0),
-      totalSpent,
-    };
-  };
 
   const columns: Column<Renter>[] = [
     {
       key: 'name',
       header: 'Customer',
       cell: (row) => {
-        const stats = getRenterStats(row.id);
         return (
           <div className="flex items-center gap-3">
             <Avatar className="h-10 w-10">
@@ -115,14 +102,16 @@ export default function Customers() {
       key: 'license',
       header: 'License',
       cell: (row) => {
-        const isExpired = new Date(row.license_expiry) < new Date();
-        const isExpiringSoon = !isExpired && new Date(row.license_expiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        const isExpired = row.license_expiry ? new Date(row.license_expiry) < new Date() : false;
+        const isExpiringSoon = row.license_expiry && !isExpired && new Date(row.license_expiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         return (
           <div>
-            <p className="font-mono text-sm">{row.license_number}</p>
-            <p className={`text-xs ${isExpired ? 'text-destructive' : isExpiringSoon ? 'text-warning' : 'text-muted-foreground'}`}>
-              Exp: {new Date(row.license_expiry).toLocaleDateString()}
-            </p>
+            <p className="font-mono text-sm">{row.license_number || 'N/A'}</p>
+            {row.license_expiry && (
+              <p className={`text-xs ${isExpired ? 'text-destructive' : isExpiringSoon ? 'text-warning' : 'text-muted-foreground'}`}>
+                Exp: {new Date(row.license_expiry).toLocaleDateString()}
+              </p>
+            )}
           </div>
         );
       },
@@ -207,6 +196,29 @@ export default function Customers() {
     },
   ];
 
+  if (isLoading) {
+    return (
+      <MainLayout title="Customer Database" subtitle="Loading customers...">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24" />)}
+        </div>
+        <Skeleton className="h-64" />
+      </MainLayout>
+    );
+  }
+
+  if (isError) {
+    return (
+      <MainLayout title="Customer Database" subtitle="Error loading data">
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-destructive">Failed to load customer data. Please try again.</p>
+          </CardContent>
+        </Card>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout title="Customer Database" subtitle="Manage renters and their information">
       {/* Quick Stats */}
@@ -218,7 +230,7 @@ export default function Customers() {
                 <User className="w-5 h-5 text-info" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{mockRenters.length}</p>
+                <p className="text-2xl font-bold">{renters.length}</p>
                 <p className="text-sm text-muted-foreground">Total Customers</p>
               </div>
             </div>
@@ -231,9 +243,7 @@ export default function Customers() {
                 <Calendar className="w-5 h-5 text-success" />
               </div>
               <div>
-                <p className="text-2xl font-bold">
-                  {mockRenters.filter(r => mockRentalSessions.some(s => s.renter_id === r.id && s.status === 'active')).length}
-                </p>
+                <p className="text-2xl font-bold">{currentlyRenting}</p>
                 <p className="text-sm text-muted-foreground">Currently Renting</p>
               </div>
             </div>
@@ -259,12 +269,7 @@ export default function Customers() {
                 <AlertTriangle className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold">
-                  {mockRenters.filter(r => {
-                    const stats = getRenterStats(r.id);
-                    return stats.unpaidFines > 0;
-                  }).length}
-                </p>
+                <p className="text-2xl font-bold">{withUnpaidFines}</p>
                 <p className="text-sm text-muted-foreground">With Unpaid Fines</p>
               </div>
             </div>
@@ -353,7 +358,7 @@ export default function Customers() {
       {/* Tabs */}
       <Tabs defaultValue="all" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="all">All Customers ({mockRenters.length})</TabsTrigger>
+          <TabsTrigger value="all">All Customers ({renters.length})</TabsTrigger>
           <TabsTrigger value="active">Active ({activeRenters.length})</TabsTrigger>
           <TabsTrigger value="blacklisted">
             Blacklisted ({blacklistedRenters.length})
@@ -368,7 +373,7 @@ export default function Customers() {
         <TabsContent value="all">
           <DataTable
             columns={columns}
-            data={searchQuery ? filteredRenters : mockRenters}
+            data={searchQuery ? filteredRenters : renters}
             onRowClick={(row) => navigate(`/customers/${row.id}`)}
             emptyMessage="No customers found"
           />
