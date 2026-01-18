@@ -18,6 +18,8 @@ export interface TableMapping {
   requiresLookup?: boolean;
   // If true, this is an UPDATE operation rather than INSERT
   isUpdate?: boolean;
+  // Optional row filter to skip invalid rows
+  filterRow?: (row: Record<string, unknown>) => boolean;
 }
 
 // Define mappings from SQLite tables to Supabase tables
@@ -27,12 +29,40 @@ export const sqliteTableMappings: TableMapping[] = [
     sourceTable: 'cars',
     targetTable: 'cars',
     description: 'Vehicle fleet data',
+    // Filter out rows without required fields
+    filterRow: (row) => {
+      const make = row['make'];
+      const model = row['model'];
+      const plate = row['plate'];
+      const year = row['year'];
+      // Skip rows without essential data
+      return !!(make && model && plate && year);
+    },
     columnMappings: [
-      { source: 'year', target: 'year' },
-      { source: 'make', target: 'make' },
-      { source: 'model', target: 'model' },
+      { 
+        source: 'year', 
+        target: 'year',
+        transform: (value) => {
+          const num = Number(value);
+          return isNaN(num) ? new Date().getFullYear() : num;
+        }
+      },
+      { 
+        source: 'make', 
+        target: 'make',
+        transform: (value) => String(value || 'Unknown').trim() || 'Unknown'
+      },
+      { 
+        source: 'model', 
+        target: 'model',
+        transform: (value) => String(value || 'Unknown').trim() || 'Unknown'
+      },
       { source: 'colour', target: 'color' },
-      { source: 'plate', target: 'plate_number' },
+      { 
+        source: 'plate', 
+        target: 'plate_number',
+        transform: (value) => String(value || '').trim().toUpperCase()
+      },
       { source: 'selling_price', target: 'selling_price' },
       { source: 'purchase_price', target: 'purchase_price' },
       { source: 'purchase_date', target: 'purchase_date' },
@@ -166,10 +196,37 @@ export const sqliteTableMappings: TableMapping[] = [
     description: 'Renter payment tracking',
     dependsOn: ['renters'],
     requiresLookup: true,
+    filterRow: (row) => {
+      const amount = row['amount'];
+      const date = row['instalment_date'];
+      return !!(amount && date);
+    },
     columnMappings: [
-      { source: 'instalment_date', target: 'instalment_date' },
-      { source: 'amount', target: 'amount' },
-      { source: 'status', target: 'status' },
+      { 
+        source: 'instalment_date', 
+        target: 'instalment_date',
+        transform: (value) => {
+          if (!value) return new Date().toISOString().split('T')[0];
+          const dateStr = String(value);
+          // Check for invalid date strings like "TOTAL"
+          if (dateStr.match(/^[A-Za-z]+$/)) return null;
+          const date = new Date(dateStr);
+          return isNaN(date.getTime()) ? new Date().toISOString().split('T')[0] : dateStr;
+        }
+      },
+      { 
+        source: 'amount', 
+        target: 'amount',
+        transform: (value) => {
+          const num = Number(value);
+          return isNaN(num) ? 0 : num;
+        }
+      },
+      { 
+        source: 'status', 
+        target: 'status',
+        transform: (value) => String(value || 'pending')
+      },
       { source: 'notes', target: 'notes' },
     ],
   },
@@ -181,11 +238,34 @@ export const sqliteTableMappings: TableMapping[] = [
     description: 'Rental session records',
     dependsOn: ['cars', 'renters'],
     requiresLookup: true,
+    filterRow: (row) => {
+      const startDate = row['pickup_date'];
+      const weeklyRent = row['weekly_rent'];
+      // Skip rows with invalid date strings like "TOTAL" or missing required fields
+      if (typeof startDate === 'string' && startDate.match(/^[A-Za-z]+$/)) return false;
+      return !!(startDate && weeklyRent !== null && weeklyRent !== undefined);
+    },
     columnMappings: [
-      { source: 'pickup_date', target: 'start_date' },
+      { 
+        source: 'pickup_date', 
+        target: 'start_date',
+        transform: (value) => {
+          if (!value) return new Date().toISOString().split('T')[0];
+          const dateStr = String(value);
+          const date = new Date(dateStr);
+          return isNaN(date.getTime()) ? new Date().toISOString().split('T')[0] : dateStr;
+        }
+      },
       { source: 'return_date', target: 'end_date' },
       { source: 'bond', target: 'bond_amount' },
-      { source: 'weekly_rent', target: 'weekly_rent' },
+      { 
+        source: 'weekly_rent', 
+        target: 'weekly_rent',
+        transform: (value) => {
+          const num = Number(value);
+          return isNaN(num) || value === null ? 0 : num;
+        }
+      },
       { source: 'notes', target: 'notes' },
     ],
   },
@@ -195,11 +275,32 @@ export const sqliteTableMappings: TableMapping[] = [
     description: 'Rental contracts (as sessions)',
     dependsOn: ['cars', 'renters'],
     requiresLookup: true,
+    filterRow: (row) => {
+      const startDate = row['start_date'];
+      if (typeof startDate === 'string' && startDate.match(/^[A-Za-z]+$/)) return false;
+      return !!startDate;
+    },
     columnMappings: [
-      { source: 'start_date', target: 'start_date' },
+      { 
+        source: 'start_date', 
+        target: 'start_date',
+        transform: (value) => {
+          if (!value) return new Date().toISOString().split('T')[0];
+          const dateStr = String(value);
+          const date = new Date(dateStr);
+          return isNaN(date.getTime()) ? new Date().toISOString().split('T')[0] : dateStr;
+        }
+      },
       { source: 'end_date', target: 'end_date' },
       { source: 'bond_amount', target: 'bond_amount' },
-      { source: 'rent_amount', target: 'weekly_rent' },
+      { 
+        source: 'rent_amount', 
+        target: 'weekly_rent',
+        transform: (value) => {
+          const num = Number(value);
+          return isNaN(num) || value === null ? 0 : num;
+        }
+      },
       { source: 'notes', target: 'notes' },
     ],
   },
@@ -209,8 +310,22 @@ export const sqliteTableMappings: TableMapping[] = [
     description: 'Renter assignments (as sessions)',
     dependsOn: ['cars', 'renters'],
     requiresLookup: true,
+    filterRow: (row) => {
+      const date = row['assignment_date'];
+      if (typeof date === 'string' && date.match(/^[A-Za-z]+$/)) return false;
+      return !!date;
+    },
     columnMappings: [
-      { source: 'assignment_date', target: 'start_date' },
+      { 
+        source: 'assignment_date', 
+        target: 'start_date',
+        transform: (value) => {
+          if (!value) return new Date().toISOString().split('T')[0];
+          const dateStr = String(value);
+          const date = new Date(dateStr);
+          return isNaN(date.getTime()) ? new Date().toISOString().split('T')[0] : dateStr;
+        }
+      },
       { source: 'notes', target: 'notes' },
       { 
         source: 'assignment_date', 
@@ -227,8 +342,23 @@ export const sqliteTableMappings: TableMapping[] = [
     description: 'Rental payment records',
     dependsOn: ['car_rental_sessions'],
     requiresLookup: true,
+    filterRow: (row) => {
+      const date = row['date'];
+      // Skip rows with text like "TOTAL" in date field
+      if (typeof date === 'string' && date.match(/^[A-Za-z]+$/)) return false;
+      return !!date;
+    },
     columnMappings: [
-      { source: 'date', target: 'payment_date' },
+      { 
+        source: 'date', 
+        target: 'payment_date',
+        transform: (value) => {
+          if (!value) return new Date().toISOString().split('T')[0];
+          const dateStr = String(value);
+          const date = new Date(dateStr);
+          return isNaN(date.getTime()) ? new Date().toISOString().split('T')[0] : dateStr;
+        }
+      },
       { 
         source: 'amount', 
         target: 'amount',
