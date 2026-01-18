@@ -3,6 +3,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Fleet from "./pages/Fleet";
 import VehicleDetail from "./pages/VehicleDetail";
@@ -25,23 +28,29 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/fleet" element={<Fleet />} />
-          <Route path="/fleet/:id" element={<VehicleDetail />} />
-          <Route path="/rentals" element={<Rentals />} />
-          <Route path="/rentals/:id" element={<Rentals />} />
-          <Route path="/customers" element={<Customers />} />
-          <Route path="/customers/:id" element={<Customers />} />
-          <Route path="/financials" element={<Financials />} />
-          <Route path="/maintenance" element={<Maintenance />} />
-          <Route path="/fines" element={<Fines />} />
-          <Route path="/insurance" element={<Insurance />} />
-          <Route path="/whatsapp" element={<WhatsApp />} />
-          <Route path="/import" element={<DataImport />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            {/* Public route */}
+            <Route path="/auth" element={<Auth />} />
+            
+            {/* Protected routes */}
+            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/fleet" element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
+            <Route path="/fleet/:id" element={<ProtectedRoute><VehicleDetail /></ProtectedRoute>} />
+            <Route path="/rentals" element={<ProtectedRoute><Rentals /></ProtectedRoute>} />
+            <Route path="/rentals/:id" element={<ProtectedRoute><Rentals /></ProtectedRoute>} />
+            <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+            <Route path="/customers/:id" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+            <Route path="/financials" element={<ProtectedRoute><Financials /></ProtectedRoute>} />
+            <Route path="/maintenance" element={<ProtectedRoute><Maintenance /></ProtectedRoute>} />
+            <Route path="/fines" element={<ProtectedRoute><Fines /></ProtectedRoute>} />
+            <Route path="/insurance" element={<ProtectedRoute><Insurance /></ProtectedRoute>} />
+            <Route path="/whatsapp" element={<ProtectedRoute><WhatsApp /></ProtectedRoute>} />
+            <Route path="/import" element={<ProtectedRoute><DataImport /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
