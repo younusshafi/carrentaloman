@@ -4,7 +4,8 @@ import { StatusBadge } from '@/components/shared/StatusBadge';
 import { DataTable, Column } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { dashboardStats, mockCars, mockRentalSessions, mockMaintenanceTickets, mockTrafficFines, mockInsuranceRecords, mockRegoRecords } from '@/data/mockData';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useDashboardData } from '@/hooks/useDashboardData';
 import {
   Car,
   DollarSign,
@@ -21,6 +22,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
+// Placeholder revenue data - will be computed from real data later
 const revenueData = [
   { month: 'Jul', revenue: 8500, expenses: 2800 },
   { month: 'Aug', revenue: 9200, expenses: 3100 },
@@ -30,34 +32,30 @@ const revenueData = [
   { month: 'Dec', revenue: 12450, expenses: 3250 },
 ];
 
-const fleetStatusData = [
-  { name: 'Available', value: dashboardStats.fleet.available, color: 'hsl(142, 76%, 36%)' },
-  { name: 'Rented', value: dashboardStats.fleet.rented, color: 'hsl(199, 89%, 48%)' },
-  { name: 'Maintenance', value: dashboardStats.fleet.maintenance, color: 'hsl(38, 92%, 50%)' },
-  { name: 'Reserved', value: dashboardStats.fleet.reserved, color: 'hsl(262, 83%, 58%)' },
-];
-
 export default function Dashboard() {
   const navigate = useNavigate();
+  const {
+    stats,
+    cars,
+    activeRentals,
+    maintenanceTickets,
+    unpaidFines,
+    expiringInsurance,
+    expiringRego,
+    isLoading,
+    isError,
+  } = useDashboardData();
 
-  // Get expiring items
   const today = new Date();
-  const in15Days = new Date(today.getTime() + 15 * 24 * 60 * 60 * 1000);
-  const in45Days = new Date(today.getTime() + 45 * 24 * 60 * 60 * 1000);
 
-  const expiringInsurance = mockInsuranceRecords.filter(r => {
-    const expiry = new Date(r.expiry_date);
-    return expiry <= in45Days && expiry > today;
-  });
+  const fleetStatusData = [
+    { name: 'Available', value: stats.fleet.available, color: 'hsl(142, 76%, 36%)' },
+    { name: 'Rented', value: stats.fleet.rented, color: 'hsl(199, 89%, 48%)' },
+    { name: 'Maintenance', value: stats.fleet.maintenance, color: 'hsl(38, 92%, 50%)' },
+    { name: 'Reserved', value: stats.fleet.reserved, color: 'hsl(262, 83%, 58%)' },
+  ];
 
-  const expiringRego = mockRegoRecords.filter(r => {
-    const expiry = new Date(r.expiry_date);
-    return expiry <= in45Days && expiry > today;
-  });
-
-  const unpaidFines = mockTrafficFines.filter(f => !f.is_paid);
-
-  const activeRentalsColumns: Column<typeof mockRentalSessions[0]>[] = [
+  const activeRentalsColumns: Column<typeof activeRentals[0]>[] = [
     {
       key: 'car',
       header: 'Vehicle',
@@ -88,7 +86,7 @@ export default function Dashboard() {
       header: 'Period',
       cell: (row) => (
         <div className="text-sm">
-          <p>{new Date(row.start_date).toLocaleDateString()} - {new Date(row.end_date).toLocaleDateString()}</p>
+          <p>{new Date(row.start_date).toLocaleDateString()} - {row.end_date ? new Date(row.end_date).toLocaleDateString() : 'Ongoing'}</p>
         </div>
       ),
     },
@@ -104,32 +102,61 @@ export default function Dashboard() {
     },
   ];
 
+  if (isLoading) {
+    return (
+      <MainLayout title="Dashboard" subtitle="Loading your fleet overview...">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (isError) {
+    return (
+      <MainLayout title="Dashboard" subtitle="Error loading data">
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-destructive">Failed to load dashboard data. Please try again.</p>
+          </CardContent>
+        </Card>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout title="Dashboard" subtitle="Welcome back! Here's your fleet overview.">
       {/* Top Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           title="Total Fleet"
-          value={dashboardStats.fleet.total}
+          value={stats.fleet.total}
           icon={Car}
-          subtitle={`${dashboardStats.fleet.available} available`}
+          subtitle={`${stats.fleet.available} available`}
           variant="accent"
         />
         <StatCard
           title="Monthly Revenue"
-          value={`$${dashboardStats.financial.monthlyRevenue.toLocaleString()}`}
+          value={`$${stats.financial.monthlyRevenue.toLocaleString()}`}
           icon={DollarSign}
           trend={{ value: 8.5, isPositive: true }}
         />
         <StatCard
           title="Active Rentals"
-          value={dashboardStats.operations.activeRentals}
+          value={stats.operations.activeRentals}
           icon={CalendarClock}
-          subtitle={`${dashboardStats.operations.upcomingReturns} returns soon`}
+          subtitle={`${stats.operations.upcomingReturns} returns soon`}
         />
         <StatCard
           title="Net Profit"
-          value={`$${dashboardStats.financial.netProfit.toLocaleString()}`}
+          value={`$${stats.financial.netProfit.toLocaleString()}`}
           icon={TrendingUp}
           trend={{ value: 12.3, isPositive: true }}
           variant="success"
@@ -140,19 +167,19 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           title="Outstanding Payments"
-          value={`$${dashboardStats.financial.outstandingPayments.toLocaleString()}`}
+          value={`$${stats.financial.outstandingPayments.toLocaleString()}`}
           icon={DollarSign}
-          variant={dashboardStats.financial.outstandingPayments > 0 ? 'warning' : 'default'}
+          variant={stats.financial.outstandingPayments > 0 ? 'warning' : 'default'}
         />
         <StatCard
           title="Open Tickets"
-          value={mockMaintenanceTickets.filter(t => t.status !== 'completed').length}
+          value={maintenanceTickets.length}
           icon={Wrench}
-          variant={mockMaintenanceTickets.filter(t => t.status !== 'completed').length > 0 ? 'warning' : 'default'}
+          variant={maintenanceTickets.length > 0 ? 'warning' : 'default'}
         />
         <StatCard
           title="Unpaid Fines"
-          value={`$${unpaidFines.reduce((sum, f) => sum + f.amount, 0)}`}
+          value={`$${unpaidFines.reduce((sum, f) => sum + Number(f.amount || 0), 0)}`}
           icon={AlertTriangle}
           variant={unpaidFines.length > 0 ? 'destructive' : 'default'}
         />
@@ -255,11 +282,15 @@ export default function Dashboard() {
           </Button>
         </CardHeader>
         <CardContent>
-          <DataTable
-            columns={activeRentalsColumns}
-            data={mockRentalSessions.filter(r => r.status === 'active')}
-            onRowClick={(row) => navigate(`/rentals/${row.id}`)}
-          />
+          {activeRentals.length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">No active rentals</p>
+          ) : (
+            <DataTable
+              columns={activeRentalsColumns}
+              data={activeRentals}
+              onRowClick={(row) => navigate(`/rentals/${row.id}`)}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -274,10 +305,10 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {mockMaintenanceTickets
-              .filter(t => t.status !== 'completed')
-              .slice(0, 3)
-              .map((ticket) => (
+            {maintenanceTickets.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-4">No open tickets</p>
+            ) : (
+              maintenanceTickets.slice(0, 3).map((ticket) => (
                 <div key={ticket.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center">
@@ -290,7 +321,8 @@ export default function Dashboard() {
                   </div>
                   <StatusBadge status={ticket.priority} />
                 </div>
-              ))}
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -303,20 +335,24 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {unpaidFines.slice(0, 3).map((fine) => (
-              <div key={fine.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center">
-                    <AlertTriangle className="w-4 h-4 text-destructive" />
+            {unpaidFines.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-4">No unpaid fines</p>
+            ) : (
+              unpaidFines.slice(0, 3).map((fine) => (
+                <div key={fine.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center">
+                      <AlertTriangle className="w-4 h-4 text-destructive" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">${fine.amount}</p>
+                      <p className="text-xs text-muted-foreground">{fine.car?.plate_number}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium">${fine.amount}</p>
-                    <p className="text-xs text-muted-foreground">{fine.car?.plate_number}</p>
-                  </div>
+                  <span className="text-xs text-muted-foreground">{new Date(fine.offence_date).toLocaleDateString()}</span>
                 </div>
-                <span className="text-xs text-muted-foreground">{new Date(fine.offence_date).toLocaleDateString()}</span>
-              </div>
-            ))}
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -329,46 +365,50 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
-            {expiringInsurance.map((ins) => {
-              const car = mockCars.find(c => c.id === ins.car_id);
-              const daysLeft = Math.ceil((new Date(ins.expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              return (
-                <div key={ins.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center">
-                      <Shield className="w-4 h-4 text-warning" />
+            {expiringInsurance.length === 0 && expiringRego.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-4">Nothing expiring soon</p>
+            ) : (
+              <>
+                {expiringInsurance.map((ins) => {
+                  const daysLeft = Math.ceil((new Date(ins.expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <div key={ins.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center">
+                          <Shield className="w-4 h-4 text-warning" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">Insurance</p>
+                          <p className="text-xs text-muted-foreground">{ins.car?.plate_number}</p>
+                        </div>
+                      </div>
+                      <span className={`text-xs font-medium ${daysLeft <= 15 ? 'text-destructive' : 'text-warning'}`}>
+                        {daysLeft} days
+                      </span>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium">Insurance</p>
-                      <p className="text-xs text-muted-foreground">{car?.plate_number}</p>
+                  );
+                })}
+                {expiringRego.map((rego) => {
+                  const daysLeft = Math.ceil((new Date(rego.expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <div key={rego.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center">
+                          <FileText className="w-4 h-4 text-warning" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">Registration</p>
+                          <p className="text-xs text-muted-foreground">{rego.car?.plate_number}</p>
+                        </div>
+                      </div>
+                      <span className={`text-xs font-medium ${daysLeft <= 15 ? 'text-destructive' : 'text-warning'}`}>
+                        {daysLeft} days
+                      </span>
                     </div>
-                  </div>
-                  <span className={`text-xs font-medium ${daysLeft <= 15 ? 'text-destructive' : 'text-warning'}`}>
-                    {daysLeft} days
-                  </span>
-                </div>
-              );
-            })}
-            {expiringRego.map((rego) => {
-              const car = mockCars.find(c => c.id === rego.car_id);
-              const daysLeft = Math.ceil((new Date(rego.expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              return (
-                <div key={rego.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center">
-                      <FileText className="w-4 h-4 text-warning" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Registration</p>
-                      <p className="text-xs text-muted-foreground">{car?.plate_number}</p>
-                    </div>
-                  </div>
-                  <span className={`text-xs font-medium ${daysLeft <= 15 ? 'text-destructive' : 'text-warning'}`}>
-                    {daysLeft} days
-                  </span>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
